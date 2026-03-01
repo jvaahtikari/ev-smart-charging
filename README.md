@@ -119,3 +119,13 @@ ROADMAP.md                                # Planned enhancements
 
 See [`docs/`](docs/) for architecture details and dashboard guide.
 See [`ROADMAP.md`](ROADMAP.md) for planned enhancements.
+
+---
+
+## License
+
+This project is released under a **custom non-commercial license** — free for personal, educational, and non-commercial use.
+
+For **commercial use** (integration into a paid product, service, or solution delivered to third parties), a separate written license agreement is required. See [`LICENSE`](LICENSE) for full terms or contact the author to discuss commercial licensing.
+
+© 2026 Jussi Vaahtikari

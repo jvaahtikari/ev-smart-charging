@@ -123,64 +123,169 @@ HA WebSocket API — no custom backend needed.
 
 ---
 
-## Phase 4 — Long journey mode (calendar-driven full charge)
+## Phase 4 — Long journey mode (full charge to 100 %)
 
-**Goal:** When the driver has a long trip scheduled (detectable from a
-calendar event), the system automatically switches to a "full charge" plan
-that charges the battery to 100 % by the departure time — overriding the
-normal cost-optimised target. After the event passes, the system reverts to
-normal mode.
-
-**Trigger detection:**
-The system monitors one or more Home Assistant `calendar.*` entities for
-events that match configurable keywords (e.g. "business trip", "long drive",
-"road trip", or a dedicated EV travel calendar). Keywords are configurable
-via `input_text.ev_journey_keywords`.
-
-**Behaviour:**
-1. When a matching event is detected within the lookahead window (e.g. next
-   48 h), the system:
-   - Sets `ev_max_soc` to 100 %
-   - Sets `ev_deadline` to the event start time minus a configurable buffer
-     (default 30 min)
-   - Sets `ev_target_kwh` to the calculated headroom to 100 %
-   - Optionally enables `ev_charge_now_override` if departure is imminent
-     and there is not enough time for smart scheduling
-2. A persistent notification is created: *"Long journey mode active for
-   [event name]. Charging to 100 % by [departure − 30 min]."*
-3. After the event starts (or the battery reaches 100 %), the system
-   restores the previous settings from a snapshot
-
-**New entities needed:**
-- `input_text.ev_journey_keywords` — comma-separated keywords to match
-- `input_number.ev_journey_departure_buffer_min` — buffer before departure (default 30)
-- `input_number.ev_journey_lookahead_hours` — how far ahead to scan (default 48)
-- `input_boolean.ev_journey_mode_active` — read-only indicator, set by automation
-- `input_text.ev_journey_event_name` — name of the detected event (for display)
-- `sensor.ev_journey_departure_ts` — detected departure timestamp
-
-**Snapshot / restore:**
-Before overriding settings, the automation snapshots the current values of
-`ev_deadline`, `ev_max_soc`, and `ev_target_kwh` to `input_text` helpers.
-On restore, those values are written back.
-
-**Calendar integration:**
-Uses the standard HA `calendar.get_events` service (available since HA
-2023.11) to query upcoming events without polling. An automation triggers on
-time pattern (`/15 minutes`) and on calendar entity state changes.
+This phase is a third independent deadline alongside the existing smart
+deadline and the daily minimum-charge deadline. It is delivered in two steps.
 
 ---
 
-## Priority order suggestion
+### Phase 4 — Step 1: manual third deadline (no calendar)
 
-| Phase | Effort | Value | Suggested order |
-|-------|--------|-------|----------------|
-| 4 — Long journey mode | Low–medium | High (safety / range) | **First** |
-| 1 — ML consumption prediction | Medium | High (cost + convenience) | **Second** |
-| 2 — Grid load awareness | Medium–high | High (infrastructure safety) | **Third** |
+**Goal:** The driver can manually activate a "charge to 100 %" mode with a
+deadline datetime. The system plans the cheapest slots to reach 100 % by
+that time, overlaid on the normal smart plan. A simple toggle enables or
+disables it.
+
+This is intentionally the simplest useful implementation. No calendar
+integration, no keyword matching — just a third deadline the driver sets
+when they know a long trip is coming.
+
+**New entities:**
+- `input_boolean.ev_full_charge_mode` — toggle on/off
+- `input_datetime.ev_full_charge_deadline` — by when to reach 100 %
+- `sensor.ev_full_charge_plan` — cheapest slots to reach 100 % by deadline
+- `binary_sensor.ev_should_charge_now_full` — current slot in full-charge plan
+
+**Operating mode priority (revised):**
+```
+1. DISABLED
+2. CHARGE NOW override
+3. FULL CHARGE mode   ← new, sits above min-charge and smart
+4. MIN CHARGE
+5. SMART
+6. IDLE
+```
+
+**Behaviour:**
+- When `ev_full_charge_mode = on`, the full-charge plan calculates slots
+  needed to go from current SOC to 100 % by `ev_full_charge_deadline`
+- The plan uses `ev_price_slots_15m_effective` (spot + forecast) so the
+  deadline can be days ahead
+- If the deadline is unreachable (not enough slots), a warning sensor fires
+- When SOC reaches 100 % or the deadline passes, a notification prompts the
+  driver to turn off the mode (auto-off is optional but risky — leave manual)
+- Normal smart plan continues to run in parallel; the full-charge plan simply
+  adds extra slots on top
+
+**Snapshot / restore:** Not needed for Step 1 — the toggle is explicit and
+the driver turns it off after the trip.
+
+---
+
+### Phase 4 — Step 2: calendar trigger
+
+**Goal:** Automate Step 1 activation by watching Home Assistant calendar
+entities for events matching configurable keywords (e.g. "business trip",
+"long drive"). When a match is detected within the lookahead window, the
+system automatically sets `ev_full_charge_deadline` to `event_start − buffer`
+and turns on `ev_full_charge_mode`.
+
+**New entities (additional to Step 1):**
+- `input_text.ev_journey_keywords` — comma-separated keywords to match
+- `input_number.ev_journey_departure_buffer_min` — buffer before departure (default 30)
+- `input_number.ev_journey_lookahead_hours` — how far ahead to scan (default 48)
+- `input_text.ev_journey_event_name` — name of the detected event (for display)
+
+**Calendar integration:**
+Uses `calendar.get_events` service (available since HA 2023.11). An
+automation triggers on a 15-min time pattern and on calendar state changes,
+queries upcoming events, checks for keyword matches, and activates the mode.
+After the event start time passes, the mode is auto-disabled.
+
+---
+
+---
+
+## Design study — rolling horizon model
+
+*This is an open architectural question to resolve before or alongside
+Phase 1. It does not need to be answered for Phases 4 or 2.*
+
+### The current model: session-based, fixed deadline
+
+The system today is session-oriented:
+
+```
+plug in → set target kWh + deadline → planner picks cheapest slots → unplug
+```
+
+The user explicitly sets how much to charge and by when. This is simple,
+transparent, and predictable — but it places cognitive load on the driver
+(they must remember to set a sensible deadline and target every session).
+
+### The alternative: rolling / moving deadline
+
+Once Phases 1 (ML consumption) and 4 (full-charge mode) are in place, the
+system has three independent SOC targets running simultaneously:
+
+- A **minimum floor** (daily, from min-charge mode)
+- A **normal operational target** (how much energy for the coming days)
+- A **ceiling** (100 % for known long trips)
+
+The question is whether the "normal operational target" should remain
+session-based or shift to a **rolling continuous model**:
+
+```
+Instead of: "charge X kWh by time T"
+Become:     "keep SOC ≥ predicted_need_pct over the next N days,
+             using cheapest slots from the full forecast window"
+```
+
+In this model there is no explicit deadline. The system continuously
+re-evaluates: *given predicted consumption over the next rolling N days
+and the full price forecast, what are the cheapest slots that keep the
+car ready?* It selects the globally cheapest slots across the whole
+horizon, charging less when prices are expected to fall and pre-charging
+when prices are expected to spike.
+
+**Advantages:**
+- Fully automatic — driver never sets a deadline or target
+- Exploits the full multi-day forecast window naturally
+- Naturally integrates with ML consumption prediction (Phase 1): the rolling
+  need is the ML output
+- Eliminates the "I forgot to update my deadline" failure mode
+
+**Challenges and open questions:**
+- How is the rolling window length chosen? 3 days? 7 days? User-configured?
+- How does the system handle uncertainty — if consumption prediction is wrong,
+  does it leave the car under-charged?
+- The min-charge daily deadline becomes the hard floor; the rolling model
+  operates above it. Is that separation clear enough to users?
+- Battery health: continuous keep-at-80% is better than repeated 20→100%
+  cycles. The rolling model could enforce a soft ceiling (e.g. 85 %) except
+  when full-charge mode is active.
+- How does the driver understand what the system decided and why? A rolling
+  model is harder to explain in a status string than "charging 3 kWh by
+  Tuesday 08:00".
+- The current architecture uses `input_datetime.ev_deadline` and
+  `input_number.ev_target_kwh` as the planning inputs. A rolling model would
+  replace these with `sensor.ev_predicted_need_kwh` (from Phase 1) and a
+  computed rolling horizon timestamp. The existing planner core
+  (`ev_plan_15m_rank_effective`) is largely reusable — only its inputs change.
+
+**Suggested study approach:**
+Run both models in parallel for a period — the session-based plan as
+`ev_plan_15m_rank_effective` and the rolling model as a new shadow sensor
+`ev_plan_rolling_effective`. Log both sets of planned slots and compare
+actual cost, SOC coverage, and slot selection patterns over weeks. Let the
+data drive the decision.
+
+---
+
+## Priority order
+
+| Item | Effort | Value | Suggested order |
+|------|--------|-------|----------------|
+| 4 Step 1 — manual full-charge mode | Low | High (safety / range) | **First** |
+| 4 Step 2 — calendar trigger | Low–medium | High (convenience) | **Second** |
+| 1 — ML consumption prediction | Medium | High (cost + autonomy) | **Third** |
+| Design study — rolling horizon | Low (analysis only) | Strategic | **Alongside Phase 1** |
+| 2 — Grid load awareness | Medium–high | High (infrastructure safety) | **Fourth** |
 | 3 — HTML web UI | High | Medium (UX polish) | **Last** |
 
-Phase 4 is low-risk to implement (pure HA YAML / automation), provides
-immediate practical value, and does not depend on any of the others.
-Phases 1 and 2 can share the AppDaemon/Python infrastructure. Phase 3 is
-an independent UI rewrite that can happen at any time.
+Phase 4 Step 1 is pure YAML / automation, provides immediate practical
+value, and does not depend on any other phase. Phase 1 (ML) and the rolling
+horizon study are tightly coupled and should proceed together. Phase 2 can
+share the AppDaemon infrastructure built for Phase 1. Phase 3 is an
+independent UI rewrite that can happen at any time.

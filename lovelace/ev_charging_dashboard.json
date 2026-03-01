@@ -1,0 +1,1157 @@
+{
+  "title": "EV Charging",
+  "views": [
+    {
+      "title": "EV Charging",
+      "path": "ev-charging",
+      "type": "masonry",
+      "cards": [
+        {
+          "type": "vertical-stack",
+          "cards": [
+            {
+              "type": "grid",
+              "columns": 4,
+              "square": false,
+              "cards": [
+                {
+                  "type": "custom:mushroom-template-card",
+                  "primary": "SOC",
+                  "secondary": "{{ states('sensor.smart_battery') }}%",
+                  "icon": "mdi:battery",
+                  "entity": "sensor.smart_battery",
+                  "tap_action": {
+                    "action": "more-info"
+                  },
+                  "color": "{% set s = states('sensor.smart_battery')|float(0) %} {% if s >= 60 %} green {% elif s >= 20 %} yellow {% else %} red {% endif %}\n",
+                  "vertical": true,
+                  "features_position": "bottom"
+                },
+                {
+                  "type": "custom:mushroom-entity-card",
+                  "entity": "input_boolean.ev_smart_charge_enabled",
+                  "name": "Smart Charging",
+                  "icon": "mdi:ev-station",
+                  "tap_action": {
+                    "action": "toggle"
+                  },
+                  "hold_action": {
+                    "action": "more-info"
+                  }
+                },
+                {
+                  "type": "custom:mushroom-template-card",
+                  "primary": "Deadline",
+                  "secondary": "{% set dl = states('input_datetime.ev_deadline') %} {% if dl in ['unknown','unavailable','none',''] %}\n  Not set\n{% else %}\n  {{ as_local(as_datetime(dl)).strftime('%d %b %H:%M') }}\n{% endif %}",
+                  "icon": "mdi:calendar-clock",
+                  "icon_color": "blue",
+                  "entity": "input_datetime.ev_deadline",
+                  "layout": "vertical",
+                  "fill_container": true,
+                  "tap_action": {
+                    "action": "more-info"
+                  }
+                },
+                {
+                  "type": "custom:mushroom-entity-card",
+                  "entity": "input_boolean.ev_allow_predicted_hours",
+                  "name": "Forecast",
+                  "icon": "mdi:crystal-ball",
+                  "tap_action": {
+                    "action": "toggle"
+                  },
+                  "hold_action": {
+                    "action": "more-info"
+                  }
+                }
+              ]
+            },
+            {
+              "type": "grid",
+              "columns": 1,
+              "square": false,
+              "cards": [
+                {
+                  "type": "custom:mushroom-chips-card",
+                  "alignment": "justify",
+                  "chips": [
+                    {
+                      "type": "entity",
+                      "entity": "sensor.ev_smart_charge_status",
+                      "name": "Mode",
+                      "icon": "mdi:information-outline"
+                    },
+                    {
+                      "type": "entity",
+                      "entity": "binary_sensor.ev_should_charge_now_15m_effective",
+                      "name": "Req",
+                      "icon": "mdi:timer"
+                    },
+                    {
+                      "type": "entity",
+                      "entity": "switch.zag063912_charging",
+                      "name": "Allow",
+                      "icon": "mdi:shield-check"
+                    },
+                    {
+                      "type": "entity",
+                      "entity": "sensor.zag063912_charger_mode",
+                      "name": "State",
+                      "icon": "mdi:ev-plug-type2"
+                    },
+                    {
+                      "type": "template",
+                      "icon": "mdi:timeline-clock",
+                      "content": "{{ state_attr('sensor.ev_planning_horizon_end_ts','horizon_end_local') }}",
+                      "entity": "sensor.ev_planning_horizon_end_ts",
+                      "tap_action": {
+                        "action": "more-info"
+                      }
+                    },
+                    {
+                      "type": "entity",
+                      "entity": "sensor.smart_charging_power",
+                      "name": "Charging power",
+                      "icon": "mdi:flash"
+                    },
+                    {
+                      "type": "conditional",
+                      "conditions": [
+                        {
+                          "entity": "binary_sensor.ev_warning_confirmed_only_deadline_beyond_spot",
+                          "state": "on"
+                        }
+                      ],
+                      "chip": {
+                        "type": "template",
+                        "icon": "mdi:alert",
+                        "content": "Deadline > spot",
+                        "entity": "binary_sensor.ev_warning_confirmed_only_deadline_beyond_spot",
+                        "tap_action": {
+                          "action": "more-info"
+                        }
+                      }
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "grid",
+              "columns": 2,
+              "square": false,
+              "cards": [
+                {
+                  "type": "custom:mushroom-entity-card",
+                  "entity": "sensor.ev_max_add_to_100_kwh",
+                  "name": "To SOC 100%",
+                  "icon": "mdi:battery-plus-outline"
+                },
+                {
+                  "type": "custom:mushroom-entity-card",
+                  "entity": "sensor.ev_max_target_from_soc_kwh",
+                  "name": "To target",
+                  "icon": "mdi:battery-arrow-up"
+                },
+                {
+                  "type": "custom:mushroom-entity-card",
+                  "entity": "sensor.ev_delivered_used_kwh",
+                  "name": "Delivered (kWh)",
+                  "icon": "mdi:check-circle-outline"
+                },
+                {
+                  "type": "custom:mushroom-entity-card",
+                  "entity": "sensor.ev_remaining_used_kwh",
+                  "name": "Remaining",
+                  "icon": "mdi:progress-clock"
+                },
+                {
+                  "type": "custom:mushroom-entity-card",
+                  "entity": "sensor.ev_current_price_15m_eur_kwh",
+                  "name": "Current price",
+                  "icon": "mdi:tag"
+                },
+                {
+                  "type": "custom:mushroom-entity-card",
+                  "entity": "sensor.ev_planned_cost_eur_v3",
+                  "name": "Estimated session cost (EUR)",
+                  "icon": "mdi:currency-eur"
+                }
+              ]
+            },
+            {
+              "type": "custom:mushroom-number-card",
+              "entity": "number.ev_target_energy_kwh_ui",
+              "name": "Target energy (kWh)",
+              "icon": "mdi:battery-plus",
+              "display_mode": "slider"
+            },
+            {
+              "type": "custom:mushroom-number-card",
+              "entity": "number.ev_max_soc_ui",
+              "name": "Target SOC (%)",
+              "icon": "mdi:battery-high",
+              "display_mode": "slider"
+            },
+            {
+              "type": "custom:mushroom-number-card",
+              "entity": "input_number.ev_assumed_charge_kw",
+              "name": "Assumed charging power (kW)",
+              "icon": "mdi:flash",
+              "display_mode": "slider"
+            },
+            {
+              "type": "vertical-stack",
+              "cards": [
+                {
+                  "type": "custom:mushroom-title-card",
+                  "title": "Charge Now Override"
+                },
+                {
+                  "type": "grid",
+                  "columns": 2,
+                  "square": false,
+                  "cards": [
+                    {
+                      "type": "custom:mushroom-entity-card",
+                      "entity": "input_boolean.ev_charge_now_override",
+                      "name": "Charge Now",
+                      "icon": "mdi:flash",
+                      "tap_action": {
+                        "action": "toggle"
+                      }
+                    },
+                    {
+                      "type": "custom:mushroom-entity-card",
+                      "entity": "sensor.ev_remaining_used_kwh",
+                      "name": "Remaining (kWh)",
+                      "icon": "mdi:battery-charging"
+                    }
+                  ]
+                },
+                {
+                  "type": "custom:mushroom-template-card",
+                  "primary": "Charge Now status",
+                  "secondary": "{{ 'ACTIVE — charging to target, then auto-off' if is_state('input_boolean.ev_charge_now_override','on') else 'Inactive — normal smart schedule' }}",
+                  "icon": "{{ 'mdi:flash-circle' if is_state('input_boolean.ev_charge_now_override','on') else 'mdi:flash-off' }}",
+                  "icon_color": "{{ 'red' if is_state('input_boolean.ev_charge_now_override','on') else 'disabled' }}",
+                  "entity": "input_boolean.ev_charge_now_override"
+                }
+              ]
+            },
+            {
+              "type": "vertical-stack",
+              "cards": [
+                {
+                  "type": "custom:mushroom-title-card",
+                  "title": "Minimum Charge Level"
+                },
+                {
+                  "type": "grid",
+                  "columns": 2,
+                  "square": false,
+                  "cards": [
+                    {
+                      "type": "custom:mushroom-entity-card",
+                      "entity": "input_boolean.ev_min_charge_enabled",
+                      "name": "Min charge",
+                      "icon": "mdi:battery-arrow-up",
+                      "tap_action": {
+                        "action": "toggle"
+                      }
+                    },
+                    {
+                      "type": "custom:mushroom-entity-card",
+                      "entity": "sensor.ev_min_charge_target_kwh",
+                      "name": "Min target (kWh)",
+                      "icon": "mdi:battery-plus"
+                    }
+                  ]
+                },
+                {
+                  "type": "custom:mushroom-number-card",
+                  "entity": "input_number.ev_min_soc_pct",
+                  "name": "Minimum SOC (%)",
+                  "icon": "mdi:battery-low",
+                  "display_mode": "slider"
+                },
+                {
+                  "type": "custom:mushroom-number-card",
+                  "entity": "input_number.ev_min_charge_by_hour",
+                  "name": "Min charge by hour (0-23)",
+                  "icon": "mdi:clock-alert-outline",
+                  "display_mode": "slider"
+                },
+                {
+                  "type": "custom:mushroom-template-card",
+                  "primary": "Min charge deadline",
+                  "secondary": "{% set ts = states('sensor.ev_min_charge_deadline_ts') | int(0) %}{% if ts > 0 %}{{ as_local(as_datetime(ts)).strftime('%d.%m %H:%M') }}{% else %}unknown{% endif %}  |  {{ 'NOT ENOUGH SLOTS!' if is_state('binary_sensor.ev_warning_min_charge_not_enough_slots','on') else 'Schedule OK' }}",
+                  "icon": "{{ 'mdi:alert-circle' if is_state('binary_sensor.ev_warning_min_charge_not_enough_slots','on') else 'mdi:check-circle' }}",
+                  "icon_color": "{{ 'red' if is_state('binary_sensor.ev_warning_min_charge_not_enough_slots','on') else 'green' }}",
+                  "entity": "binary_sensor.ev_warning_min_charge_not_enough_slots"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "vertical-stack",
+          "cards": [
+            {
+              "type": "custom:stack-in-card",
+              "mode": "vertical",
+              "cards": [
+                {
+                  "type": "custom:apexcharts-card",
+                  "header": {
+                    "show": true,
+                    "title": "Price + Planned Slots",
+                    "show_states": false
+                  },
+                  "graph_span": "96h",
+                  "span": {
+                    "start": "hour"
+                  },
+                  "now": {
+                    "show": true,
+                    "label": "Now"
+                  },
+                  "apex_config": {
+                    "chart": {
+                      "height": 270
+                    },
+                    "legend": {
+                      "show": false
+                    },
+                    "xaxis": {
+                      "type": "datetime",
+                      "tickAmount": 4,
+                      "labels": {
+                        "formatter": "EVAL:function(value, timestamp) {  const ts = timestamp || value;  const d = new Date(ts);  if (Number.isNaN(d.getTime())) return '';  const days = ['su','ma','ti','ke','to','pe','la'];  return days[d.getDay()];}"
+                      }
+                    },
+                    "yaxis": [
+                      {
+                        "min": 0,
+                        "max": 25,
+                        "decimalsInFloat": 2,
+                        "title": {
+                          "text": "c/kWh"
+                        }
+                      }
+                    ],
+                    "tooltip": {
+                      "shared": true,
+                      "intersect": false,
+                      "y": {
+                        "formatter": "function (value) {\n  if (value === null || value === undefined) return '';\n  return Number(value).toFixed(2) + ' c/kWh';\n}\n"
+                      }
+                    }
+                  },
+                  "series": [
+                    {
+                      "name": "Price (c/kWh)",
+                      "type": "line",
+                      "stroke_width": 2,
+                      "entity": "sensor.ev_price_slots_15m_effective",
+                      "data_generator": "try {\n  const fee_c = 6.7;\n  const prices = hass.states['sensor.ev_price_slots_15m_effective']?.attributes?.data || [];\n  if (!Array.isArray(prices) || prices.length === 0) return [];\n  return prices\n    .map(it => {\n      const t = Date.parse(it.DateTime);\n      const base = Number(it.PriceWithTax);\n      if (!Number.isFinite(t) || !Number.isFinite(base)) return null;\n      const cents = Math.round((base * 100 + fee_c) * 100) / 100;\n      return [t, cents];\n    })\n    .filter(Boolean)\n    .sort((a,b)=>a[0]-b[0]);\n} catch (e) {\n  return [];\n}\n",
+                      "curve": "stepline",
+                      "color_threshold": [
+                        {
+                          "value": 3,
+                          "color": "lime"
+                        },
+                        {
+                          "value": 6,
+                          "color": "limegreen"
+                        },
+                        {
+                          "value": 10,
+                          "color": "gold"
+                        },
+                        {
+                          "value": 15,
+                          "color": "darkorange"
+                        },
+                        {
+                          "value": 20,
+                          "color": "red"
+                        },
+                        {
+                          "value": 30,
+                          "color": "darkred"
+                        }
+                      ]
+                    },
+                    {
+                      "name": "Planned slots",
+                      "type": "column",
+                      "stroke_width": 0,
+                      "entity": "sensor.ev_plan_15m_rank_effective",
+                      "data_generator": "try {\n  const fee_c = 6.7;\n\n  const plan = hass.states['sensor.ev_plan_15m_rank_effective']?.attributes?.planned_slots || [];\n  const prices = hass.states['sensor.ev_price_slots_15m_effective']?.attributes?.data || [];\n  if (!plan.length || !prices.length) return [];\n\n  function pad(n){ return String(n).padStart(2,'0'); }\n  function keyLocal(d){\n    return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;\n  }\n\n  const out = [];\n  for (const slot of plan) {\n    const ts = Number(slot.ts);\n    if (!Number.isFinite(ts) || ts <= 0) continue;\n\n    const d = new Date(ts * 1000);\n    const key = keyLocal(d);\n\n    const p = prices.find(x => (x.DateTime || '').substring(0,16) === key);\n    if (!p) continue;\n\n    const t = Date.parse(p.DateTime);\n    const base = Number(p.PriceWithTax || 0);\n    const cents = Math.round((base * 100 + fee_c) * 100) / 100;\n\n    out.push([t, cents]);\n  }\n  return out.sort((a,b)=>a[0]-b[0]);\n} catch (e) {\n  return [];\n}\n"
+                    },
+                    {
+                      "name": "Min charge slots",
+                      "type": "column",
+                      "stroke_width": 0,
+                      "color": "orange",
+                      "opacity": 0.7,
+                      "entity": "sensor.ev_min_charge_plan",
+                      "data_generator": "try {\n  const fee_c = 6.7;\n  const enabled = hass.states['input_boolean.ev_min_charge_enabled']?.state === 'on';\n  if (!enabled) return [];\n  const plan = hass.states['sensor.ev_min_charge_plan']?.attributes?.planned_slots || [];\n  const prices = hass.states['sensor.ev_price_slots_15m_effective']?.attributes?.data || [];\n  if (!plan.length || !prices.length) return [];\n\n  function pad(n){ return String(n).padStart(2,'0'); }\n  function keyLocal(d){\n    return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;\n  }\n\n  const out = [];\n  for (const slot of plan) {\n    const ts = Number(slot.ts);\n    if (!Number.isFinite(ts) || ts <= 0) continue;\n    const d = new Date(ts * 1000);\n    const key = keyLocal(d);\n    const p = prices.find(x => (x.DateTime || '').substring(0,16) === key);\n    if (!p) continue;\n    const t = Date.parse(p.DateTime);\n    const base = Number(p.PriceWithTax || 0);\n    const cents = Math.round((base * 100 + fee_c) * 100) / 100;\n    out.push([t, cents]);\n  }\n  return out.sort((a,b)=>a[0]-b[0]);\n} catch (e) {\n  return [];\n}\n"
+                    },
+                    {
+                      "name": "Deadline",
+                      "type": "line",
+                      "stroke_width": 2,
+                      "color": "red",
+                      "stroke_dash": 4,
+                      "entity": "input_datetime.ev_deadline",
+                      "data_generator": "try {\n  const ent = hass.states['input_datetime.ev_deadline'];\n  const ts = ent?.attributes?.timestamp;\n  if (!Number.isFinite(ts)) return [];\n  const t = ts * 1000;\n  return [[t, 0], [t, 100], [t + 1, null]];\n} catch (e) {\n  return [];\n}\n"
+                    },
+                    {
+                      "name": "Min charge deadline",
+                      "type": "line",
+                      "stroke_width": 2,
+                      "color": "orange",
+                      "stroke_dash": 6,
+                      "entity": "sensor.ev_min_charge_deadline_ts",
+                      "data_generator": "try {\n  const enabled = hass.states['input_boolean.ev_min_charge_enabled']?.state === 'on';\n  if (!enabled) return [];\n  const ent = hass.states['sensor.ev_min_charge_deadline_ts'];\n  if (!ent) return [];\n  const ts = Number(ent.state);\n  if (!Number.isFinite(ts) || ts <= 0) return [];\n  const t = ts * 1000;\n  return [[t, 0], [t, 100], [t + 1, null]];\n} catch (e) {\n  return [];\n}\n"
+                    },
+                    {
+                      "name": " ",
+                      "type": "line",
+                      "stroke_width": 0,
+                      "opacity": 0,
+                      "color": "transparent",
+                      "entity": "input_datetime.ev_deadline",
+                      "show": {
+                        "in_header": false,
+                        "in_legend": false
+                      },
+                      "data_generator": "try {\n  const ent = hass.states['input_datetime.ev_deadline'];\n  const ts = ent?.attributes?.timestamp || 0;\n  const dl12 = ts > 0 ? ts * 1000 + 12 * 3600 * 1000 : 0;\n  const min36 = Date.now() + 36 * 3600 * 1000;\n  return [[Math.max(dl12, min36), 0.001]];\n} catch(e) { return []; }\n"
+                    }
+                  ],
+                  "experimental": {
+                    "color_threshold": true
+                  }
+                },
+                {
+                  "type": "grid",
+                  "columns": 1,
+                  "square": false,
+                  "cards": [
+                    {
+                      "type": "custom:mushroom-entity-card",
+                      "entity": "sensor.ev_planned_cost_eur_v3",
+                      "name": "Estimated session cost (EUR)",
+                      "icon": "mdi:currency-eur"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "markdown",
+              "content": "{%- set plan = state_attr('sensor.ev_plan_15m_rank_effective','planned_slots') or [] -%} {%- set min_plan = state_attr('sensor.ev_min_charge_plan','planned_slots') or [] -%} {%- set prices = state_attr('sensor.ev_price_slots_15m_effective','data') or [] -%} {%- set fee_c = 6.7 -%} {%- set days = ['ma','ti','ke','to','pe','la','su'] -%} {%- if plan | length == 0 -%}\n  Ei slotteja\n{%- else -%}\n  {%- for s in plan -%}\n    {%- set dt = as_local(as_datetime(s.ts | int(0))) -%}\n    {%- set base = (prices\n        | selectattr('DateTime','search', dt.strftime('%Y-%m-%dT%H:%M'))\n        | map(attribute='PriceWithTax')\n        | list\n        | first) | float(0) -%}\n    {{ days[dt.weekday()] }} {{ dt.strftime('%H:%M') }} · {{ (base * 100 + fee_c) | round(2) }} c/kWh{% if not loop.last %}<br>{% endif %}\n  {%- endfor -%}\n{%- endif -%}\n{%- if is_state('input_boolean.ev_min_charge_enabled','on') -%}\n  {%- if min_plan | length > 0 -%}\n    <br>**Min charge:**\n    {%- for s in (min_plan | sort(attribute='ts')) -%}\n      {%- set dt = as_local(as_datetime(s.ts | int(0))) -%}\n      {%- set base = (prices\n          | selectattr('DateTime','search', dt.strftime('%Y-%m-%dT%H:%M'))\n          | map(attribute='PriceWithTax')\n          | list\n          | first) | float(0) -%}\n      <br>{{ days[dt.weekday()] }} {{ dt.strftime('%H:%M') }} · {{ (base * 100 + fee_c) | round(2) }} c/kWh\n    {%- endfor -%}\n  {%- else -%}\n    <br>**Min charge:** target met\n  {%- endif -%}\n{%- endif -%}\n"
+            }
+          ]
+        },
+        {
+          "type": "vertical-stack",
+          "cards": [
+            {
+              "type": "custom:mushroom-title-card",
+              "title": "Session cost history"
+            },
+            {
+              "type": "grid",
+              "columns": 2,
+              "square": false,
+              "cards": [
+                {
+                  "type": "custom:mushroom-entity-card",
+                  "entity": "input_number.ev_session_cost_last_eur",
+                  "name": "Last session cost (EUR)",
+                  "icon": "mdi:currency-eur"
+                },
+                {
+                  "type": "custom:mushroom-entity-card",
+                  "entity": "input_datetime.ev_session_last_end",
+                  "name": "Last session ended",
+                  "icon": "mdi:clock-end"
+                },
+                {
+                  "type": "custom:mushroom-entity-card",
+                  "entity": "sensor.ev_session_cost_mean_7d",
+                  "name": "Mean (7d)",
+                  "icon": "mdi:chart-line"
+                },
+                {
+                  "type": "custom:mushroom-entity-card",
+                  "entity": "sensor.ev_session_cost_max_7d",
+                  "name": "Max (7d)",
+                  "icon": "mdi:chart-areaspline"
+                },
+                {
+                  "type": "custom:mushroom-entity-card",
+                  "entity": "sensor.ev_session_cost_mean_30d",
+                  "name": "Mean (30d)",
+                  "icon": "mdi:chart-line"
+                },
+                {
+                  "type": "custom:mushroom-entity-card",
+                  "entity": "sensor.ev_session_cost_max_30d",
+                  "name": "Max (30d)",
+                  "icon": "mdi:chart-areaspline"
+                }
+              ]
+            },
+            {
+              "type": "custom:apexcharts-card",
+              "header": {
+                "show": true,
+                "title": "Session cost (EUR) — history",
+                "show_states": true,
+                "colorize_states": true
+              },
+              "graph_span": "30d",
+              "span": {
+                "start": "day"
+              },
+              "now": {
+                "show": true,
+                "label": "Now"
+              },
+              "apex_config": {
+                "chart": {
+                  "height": 220
+                },
+                "xaxis": {
+                  "type": "datetime"
+                }
+              },
+              "series": [
+                {
+                  "entity": "input_number.ev_session_cost_last_eur",
+                  "name": "Session cost",
+                  "type": "line",
+                  "stroke_width": 2,
+                  "extend_to": false,
+                  "group_by": {
+                    "func": "last",
+                    "duration": "1d"
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "entities",
+          "entities": [
+            "sensor.ev_schedule_check"
+          ]
+        },
+        {
+          "type": "custom:apexcharts-card",
+          "header": {
+            "show": true,
+            "title": "Sähkön hinta ja tuulivoima",
+            "show_states": true,
+            "colorize_states": true,
+            "standard_format": true,
+            "disable_actions": true
+          },
+          "graph_span": "7d",
+          "experimental": {
+            "color_threshold": true
+          },
+          "apex_config": {
+            "chart": {
+              "height": 256,
+              "toolbar": {
+                "show": false
+              }
+            },
+            "grid": {
+              "strokeDashArray": 3
+            },
+            "legend": {
+              "show": false,
+              "customLegendItems": [
+                "Sähkön hinta (¢/kWh)",
+                "Tuulivoima (GW)"
+              ]
+            },
+            "xaxis": {
+              "type": "datetime",
+              "tickAmount": 7,
+              "tickPlacement": "on",
+              "labels": {
+                "hideOverlappingLabels": false,
+                "formatter": "EVAL:function (value, timestamp) {\n  const ts = timestamp || value;\n  const date = new Date(ts);\n  if (Number.isNaN(date.getTime())) return value;\n  const days = ['su', 'ma', 'ti', 'ke', 'to', 'pe', 'la'];\n  return days[date.getDay()];\n}\n"
+              }
+            },
+            "tooltip": {
+              "enabled": false
+            },
+            "markers": {
+              "size": 0
+            }
+          },
+          "span": {
+            "start": "day"
+          },
+          "now": {
+            "show": true,
+            "label": "Nyt"
+          },
+          "series": [
+            {
+              "entity": "sensor.nordpool_predict_fi_price",
+              "name": "Sähkön hinta",
+              "type": "line",
+              "yaxis_id": "price",
+              "extend_to": "now",
+              "curve": "stepline",
+              "stroke_width": 1.5,
+              "float_precision": 2,
+              "color": "limegreen",
+              "opacity": 1,
+              "color_threshold": [
+                {
+                  "value": 3,
+                  "color": "lime",
+                  "opacity": 1
+                },
+                {
+                  "value": 6,
+                  "color": "limegreen",
+                  "opacity": 1
+                },
+                {
+                  "value": 10,
+                  "color": "gold",
+                  "opacity": 1
+                },
+                {
+                  "value": 15,
+                  "color": "darkorange",
+                  "opacity": 1
+                },
+                {
+                  "value": 20,
+                  "color": "red",
+                  "opacity": 1
+                },
+                {
+                  "value": 30,
+                  "color": "darkred",
+                  "opacity": 1
+                }
+              ],
+              "data_generator": "const data = entity.attributes.forecast || [];\nreturn data.map((item) => [item.timestamp, item.value]);\n",
+              "show": {
+                "in_chart": true,
+                "in_header": false,
+                "in_legend": true,
+                "legend_value": false
+              }
+            },
+            {
+              "entity": "sensor.nordpool_predict_fi_price",
+              "type": "area",
+              "yaxis_id": "price",
+              "extend_to": "now",
+              "curve": "stepline",
+              "stroke_width": 0,
+              "float_precision": 1,
+              "color": "limegreen",
+              "opacity": 0.16,
+              "data_generator": "const data = entity.attributes.forecast || [];\nreturn data.map((item) => [item.timestamp, item.value]);\n",
+              "show": {
+                "in_chart": true,
+                "in_header": false,
+                "in_legend": false,
+                "legend_value": false
+              }
+            },
+            {
+              "entity": "sensor.nordpool_predict_fi_price",
+              "name": "Ennuste",
+              "type": "line",
+              "yaxis_id": "price",
+              "curve": "straight",
+              "stroke_width": 1,
+              "stroke_dash": 3,
+              "color": "red",
+              "opacity": 1,
+              "extend_to": false,
+              "data_generator": "const fs = hass.states['sensor.nordpool_predict_fi_price']?.attributes?.forecast_start;\nconst x = fs ? Date.parse(fs) : NaN;\nif (!Number.isFinite(x)) return [];\nconst data = entity.attributes.forecast || [];\nlet min = Infinity, max = -Infinity;\nfor (const i of data) {\n  const v = Number(i.value);\n  if (Number.isFinite(v)) { if (v < min) min = v; if (v > max) max = v; }\n}\nif (!Number.isFinite(min) || !Number.isFinite(max)) { min = 0; max = 1; }\n// Add a null point at x+1 ms to stop the path from continuing horizontally.\nreturn [[x, min], [x, max], [x + 1, null]];\n",
+              "show": {
+                "in_chart": true,
+                "in_header": false,
+                "in_legend": false,
+                "legend_value": false
+              }
+            },
+            {
+              "entity": "sensor.nordpool_predict_fi_windpower",
+              "name": "Tuulivoima",
+              "type": "column",
+              "yaxis_id": "wind",
+              "float_precision": 0,
+              "color": "skyblue",
+              "opacity": 0.2,
+              "extend_to": "now",
+              "stroke_width": 0,
+              "curve": "stepline",
+              "data_generator": "const data = entity.attributes.windpower_forecast || [];\nreturn data.map((item) => [item.timestamp, item.value / 1000]);\n",
+              "show": {
+                "in_chart": true,
+                "in_header": false,
+                "in_legend": true,
+                "legend_value": false
+              }
+            },
+            {
+              "entity": "sensor.nordpool_predict_fi_price_now",
+              "name": "Hinta nyt",
+              "unit": "¢",
+              "float_precision": 1,
+              "color": "dimgray",
+              "show": {
+                "in_chart": false,
+                "legend_value": false,
+                "in_header": "raw",
+                "header_color_threshold": true
+              },
+              "color_threshold": [
+                {
+                  "value": 3,
+                  "color": "lime",
+                  "opacity": 1
+                },
+                {
+                  "value": 6,
+                  "color": "limegreen",
+                  "opacity": 1
+                },
+                {
+                  "value": 10,
+                  "color": "gold",
+                  "opacity": 1
+                },
+                {
+                  "value": 15,
+                  "color": "darkorange",
+                  "opacity": 1
+                },
+                {
+                  "value": 20,
+                  "color": "red",
+                  "opacity": 1
+                },
+                {
+                  "value": 30,
+                  "color": "darkred",
+                  "opacity": 1
+                }
+              ]
+            },
+            {
+              "entity": "sensor.nordpool_predict_fi_price_next_6h",
+              "name": "Seuraavat 6h",
+              "unit": "¢",
+              "float_precision": 1,
+              "color": "dimgray",
+              "color_threshold": [
+                {
+                  "value": 3,
+                  "color": "lime",
+                  "opacity": 1
+                },
+                {
+                  "value": 6,
+                  "color": "limegreen",
+                  "opacity": 1
+                },
+                {
+                  "value": 10,
+                  "color": "gold",
+                  "opacity": 1
+                },
+                {
+                  "value": 15,
+                  "color": "darkorange",
+                  "opacity": 1
+                },
+                {
+                  "value": 20,
+                  "color": "red",
+                  "opacity": 1
+                },
+                {
+                  "value": 30,
+                  "color": "darkred",
+                  "opacity": 1
+                }
+              ],
+              "show": {
+                "in_chart": false,
+                "legend_value": false,
+                "header_color_threshold": true
+              }
+            },
+            {
+              "entity": "sensor.nordpool_predict_fi_cheapest_6h_price_window",
+              "name": "Halvin 6h",
+              "unit": "¢",
+              "float_precision": 1,
+              "color": "dimgray",
+              "color_threshold": [
+                {
+                  "value": 3,
+                  "color": "lime",
+                  "opacity": 1
+                },
+                {
+                  "value": 6,
+                  "color": "limegreen",
+                  "opacity": 1
+                },
+                {
+                  "value": 10,
+                  "color": "gold",
+                  "opacity": 1
+                },
+                {
+                  "value": 15,
+                  "color": "darkorange",
+                  "opacity": 1
+                },
+                {
+                  "value": 20,
+                  "color": "red",
+                  "opacity": 1
+                },
+                {
+                  "value": 30,
+                  "color": "darkred",
+                  "opacity": 1
+                }
+              ],
+              "show": {
+                "in_chart": false,
+                "legend_value": false,
+                "header_color_threshold": true
+              }
+            },
+            {
+              "entity": "sensor.nordpool_predict_fi_windpower_now",
+              "name": "Tuulivoima",
+              "float_precision": 0,
+              "color": "skyblue",
+              "show": {
+                "in_chart": false,
+                "in_header": true,
+                "in_legend": true,
+                "legend_value": false
+              }
+            }
+          ],
+          "yaxis": [
+            {
+              "id": "price",
+              "decimals": 0,
+              "apex_config": {
+                "tickAmount": 4,
+                "forceNiceScale": true,
+                "title": {
+                  "text": "Hinta (¢/kWh)"
+                }
+              }
+            },
+            {
+              "id": "wind",
+              "opposite": true,
+              "decimals": 0,
+              "apex_config": {
+                "tickAmount": 4,
+                "forceNiceScale": true,
+                "title": {
+                  "text": "Tuulivoima (GW)"
+                }
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "EV Charging (Mobile)",
+      "path": "ev-charging-mobile",
+      "type": "masonry",
+      "cards": [
+        {
+          "type": "grid",
+          "columns": 2,
+          "square": false,
+          "cards": [
+            {
+              "type": "custom:mushroom-template-card",
+              "primary": "SOC",
+              "secondary": "{{ states('sensor.smart_battery') }}%",
+              "icon": "mdi:battery",
+              "icon_color": "{% set s = states('sensor.smart_battery')|float(0) %} {% if s >= 60 %} green {% elif s >= 20 %} yellow {% else %} red {% endif %}\n",
+              "entity": "sensor.smart_battery",
+              "layout": "vertical",
+              "fill_container": true
+            },
+            {
+              "type": "custom:mushroom-template-card",
+              "primary": "Smart",
+              "secondary": "{{ 'On' if is_state('input_boolean.ev_smart_charge_enabled','on') else 'Off' }}",
+              "icon": "mdi:ev-station",
+              "icon_color": "{{ 'green' if is_state('input_boolean.ev_smart_charge_enabled','on') else 'disabled' }}",
+              "entity": "input_boolean.ev_smart_charge_enabled",
+              "layout": "vertical",
+              "fill_container": true,
+              "tap_action": {
+                "action": "toggle"
+              }
+            }
+          ]
+        },
+        {
+          "type": "custom:mushroom-entity-card",
+          "entity": "input_datetime.ev_deadline",
+          "name": "Deadline",
+          "icon": "mdi:calendar-clock"
+        },
+        {
+          "type": "custom:mushroom-number-card",
+          "entity": "number.ev_target_energy_kwh_ui",
+          "name": "Target energy (kWh)",
+          "icon": "mdi:battery-plus",
+          "display_mode": "slider"
+        },
+        {
+          "type": "custom:mushroom-number-card",
+          "entity": "number.ev_max_soc_ui",
+          "name": "Target SOC (%)",
+          "icon": "mdi:battery-high",
+          "display_mode": "slider"
+        },
+        {
+          "type": "custom:mushroom-number-card",
+          "entity": "input_number.ev_assumed_charge_kw",
+          "name": "Assumed charging power (kW)",
+          "icon": "mdi:flash",
+          "display_mode": "slider"
+        },
+        {
+          "type": "custom:mushroom-title-card",
+          "title": "SOC Limits"
+        },
+        {
+          "type": "grid",
+          "columns": 2,
+          "square": false,
+          "cards": [
+            {
+              "type": "custom:mushroom-entity-card",
+              "entity": "sensor.ev_max_add_to_100_kwh",
+              "name": "Max to 100% (kWh)",
+              "icon": "mdi:battery-plus-outline"
+            },
+            {
+              "type": "custom:mushroom-entity-card",
+              "entity": "sensor.ev_max_target_from_soc_kwh",
+              "name": "Max to target (kWh)",
+              "icon": "mdi:battery-arrow-up"
+            }
+          ]
+        },
+        {
+          "type": "grid",
+          "columns": 2,
+          "square": false,
+          "cards": [
+            {
+              "type": "custom:mushroom-entity-card",
+              "entity": "sensor.ev_delivered_used_kwh",
+              "name": "Delivered (kWh)"
+            },
+            {
+              "type": "custom:mushroom-entity-card",
+              "entity": "sensor.ev_remaining_used_kwh",
+              "name": "Remaining (kWh)"
+            },
+            {
+              "type": "custom:mushroom-entity-card",
+              "entity": "sensor.ev_current_price_15m_eur_kwh",
+              "name": "Current price"
+            },
+            {
+              "type": "custom:mushroom-entity-card",
+              "entity": "sensor.ev_planned_cost_eur_v3",
+              "name": "Est. cost"
+            }
+          ]
+        },
+        {
+          "type": "custom:apexcharts-card",
+          "header": {
+            "show": true,
+            "title": "Price + Slots (effective)",
+            "show_states": false
+          },
+          "graph_span": "24h",
+          "span": {
+            "start": "hour"
+          },
+          "apex_config": {
+            "chart": {
+              "height": 240
+            },
+            "xaxis": {
+              "type": "datetime"
+            },
+            "yaxis": [
+              {
+                "decimalsInFloat": 4
+              },
+              {
+                "opposite": true,
+                "min": 0,
+                "max": 1
+              }
+            ]
+          },
+          "series": [
+            {
+              "name": "Price (EUR/kWh)",
+              "type": "line",
+              "stroke_width": 2,
+              "yaxis_id": "first",
+              "data_generator": "const ent = hass.states['sensor.ev_price_slots_15m_effective']; const arr = ent?.attributes?.data || []; if (!Array.isArray(arr) || arr.length === 0) return []; return arr\n  .map(it => {\n    const t = Number(it.ts) * 1000;\n    const v = Number(it.PriceWithTax);\n    if (!Number.isFinite(t) || !Number.isFinite(v)) return null;\n    return [t, v];\n  })\n  .filter(Boolean)\n  .sort((a,b)=>a[0]-b[0]);\n"
+            },
+            {
+              "name": "Planned slots",
+              "type": "column",
+              "yaxis_id": "second",
+              "stroke_width": 0,
+              "data_generator": "const plan = hass.states['sensor.ev_plan_15m_rank_effective']; const slots = plan?.attributes?.planned_slots || []; if (!Array.isArray(slots) || slots.length === 0) return []; return slots\n  .map(s => Number(s.ts))\n  .filter(ts => Number.isFinite(ts) && ts > 0)\n  .map(ts => [ts*1000, 1])\n  .sort((a,b)=>a[0]-b[0]);\n"
+            }
+          ]
+        },
+        {
+          "type": "entities",
+          "title": "Debug",
+          "show_header_toggle": false,
+          "entities": [
+            {
+              "entity": "binary_sensor.ev_should_charge_now_15m_effective",
+              "name": "Should charge now (effective)"
+            },
+            {
+              "entity": "sensor.ev_predict_horizon_end_ts",
+              "name": "Predict horizon (local)",
+              "attribute": "horizon_end_local"
+            },
+            {
+              "entity": "sensor.ev_plan_15m_rank_effective",
+              "name": "Plan (effective)"
+            },
+            {
+              "entity": "sensor.ev_price_slots_15m_effective",
+              "name": "Effective price series"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "sections",
+      "max_columns": 4,
+      "title": "debug",
+      "path": "debug",
+      "sections": [
+        {
+          "type": "grid",
+          "cards": [
+            {
+              "type": "heading",
+              "heading": "New section"
+            },
+            {
+              "type": "vertical-stack",
+              "cards": [
+                {
+                  "type": "custom:mushroom-title-card",
+                  "title": "Debug / Diagnostics"
+                },
+                {
+                  "type": "entities",
+                  "show_header_toggle": false,
+                  "entities": [
+                    {
+                      "entity": "sensor.ev_price_slots_15m_effective",
+                      "name": "Effective price series"
+                    },
+                    {
+                      "entity": "sensor.ev_plan_15m_rank_effective",
+                      "name": "Plan (effective)"
+                    },
+                    {
+                      "entity": "binary_sensor.ev_should_charge_now_15m_effective",
+                      "name": "Should charge now (effective)"
+                    },
+                    {
+                      "entity": "sensor.ev_predict_horizon_end_ts",
+                      "name": "Predict horizon (local)",
+                      "attribute": "horizon_end_local"
+                    },
+                    {
+                      "entity": "input_datetime.ev_deadline",
+                      "name": "Deadline"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "vertical-stack",
+              "cards": [
+                {
+                  "type": "custom:mushroom-title-card",
+                  "title": "Vehicle"
+                },
+                {
+                  "type": "grid",
+                  "columns": 2,
+                  "square": false,
+                  "cards": [
+                    {
+                      "type": "custom:mushroom-entity-card",
+                      "entity": "sensor.smart_charging_time_remaining",
+                      "name": "Time remaining",
+                      "icon": "mdi:clock-outline"
+                    },
+                    {
+                      "type": "custom:mushroom-entity-card",
+                      "entity": "sensor.smart_last_update",
+                      "name": "Last update",
+                      "icon": "mdi:update"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

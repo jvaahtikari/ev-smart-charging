@@ -7,14 +7,16 @@
 │  PRICE DATA PIPELINE                                                    │
 │                                                                         │
 │  sensor.nordpool_predict_fi_price  ──► ev_predict_hourly_series         │
-│    (hourly c/kWh, 12 h ahead)           (normalised EUR/kWh)           │
+│    (hourly c/kWh, all available       (ALL hours, c/kWh → EUR/kWh,    │
+│     hours — typically 4–8 days)        sorted by timestamp)            │
 │                                              │                          │
 │                                         ev_predict_15m_series           │
-│                                           (expanded to 15 min,          │
-│                                            globally ranked)             │
+│                                           (each hour → 4×15 min,       │
+│                                            globally ranked within       │
+│                                            the predict series)          │
 │                                              │                          │
 │  sensor.ev_price_slots_15m (spot) ──────────┤                          │
-│                                              ▼                          │
+│    (today + tomorrow, 15 min)                ▼                          │
 │                                   ev_price_slots_15m_effective          │
 │                                   (merged spot + predict,               │
 │                                    globally ranked, DateTime + ts)      │
@@ -65,8 +67,8 @@
 
 | Sensor | State | Key Attributes |
 |--------|-------|----------------|
-| `ev_predict_horizon_end_ts` | Unix ts | `horizon_end_local`, `horizon_hours` (always 12) |
-| `ev_predict_15m_series` | `ok` | `data[]` — `{DateTime, ts, PriceWithTax, Rank}` in EUR/kWh |
+| `ev_predict_horizon_end_ts` | Unix ts | `horizon_end_local`, `horizon_hours` (hardcoded 12 — **legacy, see note below**) |
+| `ev_predict_15m_series` | `ok` | `data[]` — `{DateTime, ts, PriceWithTax, Rank}` in EUR/kWh, covering ALL hours from `ev_predict_hourly_series` |
 | `ev_plan_15m_rank` | `ok`/`no-data` | `q` (slots needed), `preview_slots[]`, `planned_slots[]` — slots: `{ts, rank, price}` |
 
 **Binary sensors:**
@@ -79,7 +81,21 @@
 
 | ID | Trigger | Action |
 |----|---------|--------|
-| `ev_deadline_guard_clamp_to_predict_horizon` | `ev_deadline` or `ev_predict_horizon_end_ts` changes | Clamps deadline to `[now+15m … horizon]` |
+| `ev_deadline_guard_clamp_to_predict_horizon` | `ev_deadline` or `ev_predict_horizon_end_ts` changes | **LEGACY** — clamps deadline to `now + 12 h`. Should be removed (see note below). |
+
+> **⚠️ Legacy guard — `ev_deadline_guard_clamp_to_predict_horizon`**
+>
+> This automation uses `sensor.ev_predict_horizon_end_ts` which is hardcoded to `now + 12*3600`.
+> When this guard fires it caps `input_datetime.ev_deadline` to 12 h from now and shows a
+> persistent notification saying *"Deadline was beyond Nordpool Predict FI horizon (12h). Clamped to…"*
+>
+> This conflicts with the newer `ev_deadline_guard_clamp_to_pricing_horizon` automation (in
+> `ev_effective_predict_and_control.yaml`) which correctly clamps to `ev_planning_horizon_end_ts`
+> — the actual end of the merged dataset (potentially days).
+>
+> **To enable full-dataset planning:** disable or remove
+> `ev_deadline_guard_clamp_to_predict_horizon` from this file.
+> The `ev_deadline_guard_clamp_to_pricing_horizon` automation fully replaces it.
 
 **Slot buffer logic in `ev_plan_15m_rank`:**
 - `q_base` = `ceil(rem_kwh / per_q_kwh)`
@@ -94,51 +110,59 @@
 
 | Sensor | Description |
 |--------|-------------|
-| `ev_spot_horizon_end_ts` | Last timestamp in spot price series |
-| `ev_pricing_horizon_end_ts` | Last timestamp in effective (merged) series |
-| `ev_planning_horizon_end_ts` | `ev_pricing_horizon_end_ts` if allow_predicted, else `ev_spot_horizon_end_ts` |
-| `ev_predict_source_status` | `ok` / `unavailable` — whether Nordpool Predict is reachable |
+| `ev_spot_horizon_end_ts` | Last timestamp in spot price series (today + tomorrow from spot-hinta.fi) |
+| `ev_pricing_horizon_end_ts` | Last timestamp in effective merged series — tracks full predict dataset |
+| `ev_planning_horizon_end_ts` | = `ev_pricing_horizon_end_ts` if `ev_allow_predicted_hours = on`, else `ev_spot_horizon_end_ts` |
+| `ev_predict_source_status` | `ok` / `missing` — whether Nordpool Predict FI entity is available |
+
+`ev_planning_horizon_end_ts` is the **authoritative upper bound** for deadline clamping. It
+updates automatically as new forecast data arrives.
 
 **Price pipeline sensors:**
 
 | Sensor | Description |
 |--------|-------------|
-| `ev_predict_hourly_series` | Parses `nordpool_predict_fi_price.forecast` — converts c/kWh → EUR/kWh, expands to `{ts, DateTime, PriceWithTax}` |
-| `ev_price_slots_15m_effective` | Merges spot + predicted, globally re-ranks all slots. Attribute `data[]` has `{DateTime, ts, PriceWithTax, Rank, PriceCt}` |
+| `ev_predict_hourly_series` | Parses `nordpool_predict_fi_price.forecast` — converts c/kWh → EUR/kWh, sorts by timestamp. Provides ALL available hourly prices (often 4–8 days / 100–200 entries). |
+| `ev_price_slots_15m_effective` | Merges spot + predicted: spot slots first; predicted slots appended for timestamps **after** the spot horizon. Globally re-ranks all slots. Attribute `data[]` has `{DateTime, ts, PriceWithTax, Rank}`. |
 
 **Effective plan sensor:**
 
-`ev_plan_15m_rank_effective` — mirrors `ev_plan_15m_rank` logic but uses `ev_price_slots_15m_effective` as source. `planned_slots` attribute used by the master control automation.
+`ev_plan_15m_rank_effective` — uses `ev_price_slots_15m_effective` as source.
+`planned_slots` attribute used by the master control automation.
+When `ev_allow_predicted_hours = on`, the deadline is bounded by
+`ev_planning_horizon_end_ts` (full dataset), not by any fixed hour count.
 
-**Charge Now sensors:**
+**Charge Now:**
 
 | Entity | Description |
 |--------|-------------|
-| `input_boolean.ev_charge_now_override` | Toggle — auto-cleared on target reached or disable |
+| `input_boolean.ev_charge_now_override` | Toggle — bypasses slot selection, charges at full power immediately |
+
+Auto-cleared by `ev_charge_now_auto_off` when `ev_remaining_used_kwh < 0.05` for 30 s,
+and also by `ev_control_effective_master` when smart charging is disabled.
 
 **Min-charge sensors:**
 
 | Sensor | Formula / Logic |
 |--------|-----------------|
-| `sensor.ev_min_charge_target_kwh` | `max(0, (min(min_soc_pct, max_soc) - soc_now) / 100 × 62.0 kWh)` |
-| `sensor.ev_min_charge_deadline_ts` | `today_at(min_charge_by_hour)` if > 5 min away, else `tomorrow_at(...)` |
-| `sensor.ev_min_charge_plan` | Cheapest N slots within `[now … min(min_deadline, planning_horizon)]`. Slots: `{ts, rank}` (no price embedded — look up from `ev_price_slots_15m_effective`) |
+| `sensor.ev_min_charge_target_kwh` | `max(0, (min(min_soc_pct, max_soc) − soc_now) / 100 × 62.0 kWh)` |
+| `sensor.ev_min_charge_deadline_ts` | `today_at(min_charge_by_hour)` if > 5 min away, else `tomorrow_at(min_charge_by_hour)` — always the **next occurrence** of the configured hour |
+| `sensor.ev_min_charge_plan` | Cheapest N slots within `[now … min(min_deadline, planning_horizon)]`. Slots: `{ts, rank}` |
 
 **Binary sensors:**
 
 | Sensor | Logic |
 |--------|-------|
-| `ev_should_charge_now_min_charge` | Current slot in `ev_min_charge_plan.planned_slots` |
+| `ev_should_charge_now_min_charge` | Current slot is in `ev_min_charge_plan.planned_slots` |
 | `ev_should_charge_now_combined` | `charge_now OR (smart_should AND remaining>0) OR min_should` — gated on `ev_smart_charge_enabled` |
-| `ev_warning_not_enough_slots` | `available_slots × per_q_kwh < ev_remaining_used_kwh` |
+| `ev_warning_not_enough_slots` | `available_slots × per_q_kwh < ev_remaining_used_kwh` within planning window |
 | `ev_warning_min_charge_not_enough_slots` | `available_min_slots × per_q_kwh < ev_min_charge_target_kwh` |
-| `ev_warning_confirmed_only_deadline_beyond_spot` | Deadline is beyond spot horizon when predicted hours are disabled |
+| `ev_warning_confirmed_only_deadline_beyond_spot` | Deadline is beyond spot horizon but `ev_allow_predicted_hours = off` |
 
 **Input helpers:**
 
 | Entity | Type | Default | Range |
 |--------|------|---------|-------|
-| `ev_smart_charge_enabled` | boolean | — | — |
 | `ev_allow_predicted_hours` | boolean | on | — |
 | `ev_charge_now_override` | boolean | off | — |
 | `ev_min_charge_enabled` | boolean | off | — |
@@ -151,7 +175,7 @@
 |----|------|---------|---------|
 | `ev_control_effective_master` | restart | 15-min time pattern + state changes on all relevant entities | Main control loop — evaluates `should_effective`, resumes or stops charger |
 | `ev_charge_now_auto_off` | single | `ev_remaining_used_kwh < 0.05` for 30 s | Clears `ev_charge_now_override` |
-| `ev_deadline_guard_clamp_to_pricing_horizon` | single | Deadline or horizon change | Keeps deadline within reachable horizon |
+| `ev_deadline_guard_clamp_to_pricing_horizon` | single | Deadline or any horizon sensor changes | Clamps deadline to `ev_planning_horizon_end_ts` (full dataset). Replaces legacy 12 h guard. |
 | `ev_session_cost_freeze_on_smart_disable` | single | Smart disabled | Snapshots cost to `ev_session_cost_frozen_eur` |
 | `ev_session_cost_log_on_session_end` | single | Session ends | Logs final cost, updates `ev_session_cost_last_eur` and `ev_session_last_end` |
 
@@ -159,13 +183,13 @@
 
 ```yaml
 variables:
-  enabled:        ev_smart_charge_enabled = on
-  remaining:      sensor.ev_remaining_used_kwh | float
-  charge_now:     ev_charge_now_override = on  AND  remaining > 0
-  should:         ev_should_charge_now_15m_effective = on  AND  remaining > 0
-  min_should:     ev_min_charge_enabled = on  AND  ev_should_charge_now_min_charge = on
+  enabled:          ev_smart_charge_enabled = on
+  remaining:        sensor.ev_remaining_used_kwh | float
+  charge_now:       ev_charge_now_override = on  AND  remaining > 0
+  should:           ev_should_charge_now_15m_effective = on  AND  remaining > 0
+  min_should:       ev_min_charge_enabled = on  AND  ev_should_charge_now_min_charge = on
   should_effective: charge_now OR should OR min_should
-  charging_active: switch.zag063912_charging = on  OR  charger_mode = connected_charging
+  charging_active:  switch.zag063912_charging = on  OR  charger_mode = connected_charging
 
 choose:
   - NOT enabled  →  stop if charging; turn off ev_charge_now_override
@@ -175,7 +199,47 @@ choose:
 
 ---
 
-### `ev_session_cost_v3.yaml`  *(config/packages/packages/)*
+### `ev_ui_sensors.yaml`
+
+UI/diagnostic template sensors, helper number entities, and the `ev_schedule_check` sensor.
+These are display-only and do not affect control logic.
+
+Key sensors:
+- `sensor.ev_schedule_check` — human-readable status string (see below)
+- `sensor.ev_current_price_15m_eur_kwh` — current 15-min slot price in EUR/kWh
+- `sensor.ev_cost_this_15m_eur` — estimated cost of the current slot
+- `sensor.ev_planned_cost_eur` — total estimated session cost from planned slots
+- `number.ev_target_energy_kwh_ui` / `number.ev_max_soc_ui` — slider proxies
+
+**`sensor.ev_schedule_check` state format:**
+```
+DISABLED
+SMART | SOC 94% | rem 3.0kWh need 2 left 382x15m ok
+CHARGE_NOW | SOC 72% | rem 2.5kWh need 10 left 24x15m ok
+SMART+MIN | SOC 60% | rem 5.0kWh need 20 left 48x15m ok | min 1.5kWh need 6 left 10x15m TIGHT!
+```
+
+---
+
+### `ev_automations.yaml`
+
+| ID | Purpose |
+|----|---------|
+| `ev_price_slots_15m_refresh` | Periodic refresh trigger for price slot sensor |
+| `ev_enabled_capture_start_kwh` | Captures energy meter when smart charging is enabled |
+| `ev_enabled_capture_start_soc` | Captures SOC when smart charging is enabled (for progress tracking) |
+| `ev_target_kwh_clamp_to_soc_limit` | Clamps target kWh to what the SOC cap allows (uses `ev_headroom_to_max_soc_kwh`) |
+| `ev_deadline_guard_no_past` | Prevents deadline being set in the past |
+| `ev_campaign_cost_reset_on_session_start` | Resets 15-min campaign cost accumulator at session start |
+| `ev_campaign_cost_accumulate_15m` | 15-min cost accumulation (feeds session history) |
+| `ev_plug_in_takeover_gate` | When cable is plugged in: checks `ev_should_charge_now_combined` and starts charging if appropriate |
+| `ev_takeover_armed_init_on_start` | Initialises plug-in gate state on HA start |
+| `ev_takeover_rearm_on_disconnect_or_safe_unknown` | Re-arms plug-in gate when cable is removed |
+| `ev_target_reached_stop` | Stops charger when `ev_remaining_used_kwh < 0.05` for 30 s, unless min-charge is active |
+
+---
+
+### `ev_session_cost_v3.yaml`
 
 **Sensors:**
 
@@ -207,37 +271,39 @@ choose:
 
 ---
 
-### `automations.yaml` — EV automations
+## Planning Horizon — How It Actually Works
 
-| ID | Purpose |
-|----|---------|
-| `ev_price_slots_15m_refresh` | Periodic refresh trigger for price slot sensor |
-| `ev_enabled_capture_start_kwh` | Captures energy meter when smart charging is enabled |
-| `ev_enabled_capture_start_soc` | Captures SOC when smart charging is enabled (for progress tracking) |
-| `ev_target_kwh_clamp_to_soc_limit` | Clamps target kWh to what the SOC cap allows |
-| `ev_deadline_guard_no_past` | Prevents deadline being set in the past |
-| `ev_campaign_cost_reset_on_session_start` | Resets 15-min campaign cost accumulator at session start |
-| `ev_campaign_cost_accumulate_15m` | 15-min cost accumulation (legacy, feeds session history) |
-| `ev_plug_in_takeover_gate` | When cable is plugged in: checks `ev_should_charge_now_combined` and starts charging if appropriate |
-| `ev_takeover_armed_init_on_start` | Initialises plug-in gate state on HA start |
-| `ev_takeover_rearm_on_disconnect_or_safe_unknown` | Re-arms plug-in gate when cable is removed |
-| `ev_target_reached_stop` | Stops charger when `ev_remaining_used_kwh < 0.05` for 30 s, unless min-charge is active |
-
----
-
-### `configuration.yaml` — `sensor.ev_schedule_check`
-
-A diagnostic sensor that produces a human-readable status string for the current charging state.
-
-**State format:**
 ```
-DISABLED
-SMART | SOC 94% | rem 3.0kWh need 2 left 382x15m ok
-CHARGE_NOW | SOC 72% | rem 2.5kWh need 10 left 24x15m ok
-SMART+MIN | SOC 60% | rem 5.0kWh need 20 left 48x15m ok | min 1.5kWh need 6 left 10x15m TIGHT!
+ev_predict_hourly_series.data
+  (all hours from Nordpool Predict FI — often 100–200+ entries)
+        │
+        ▼ (each hour → 4×15 min slots)
+ev_predict_15m_series.data
+        │
+        ▼ (append slots after spot_horizon_end)
+ev_price_slots_15m_effective.data
+        │
+        ├── ev_spot_horizon_end_ts = last ts of spot data
+        ├── ev_pricing_horizon_end_ts = last ts of effective (merged) data
+        └── ev_planning_horizon_end_ts
+                = ev_pricing_horizon_end_ts  (if ev_allow_predicted_hours = on)
+                = ev_spot_horizon_end_ts     (if ev_allow_predicted_hours = off)
 ```
 
-**Attributes:** `mode`, `charge_now_active`, `min_charge_active`, `soc_now`, `soc_target`, `deadline_local`, `smart_rem_kwh`, `smart_need_q`, `smart_left_q`, `smart_tight`, `min_charge_target_kwh`, `min_charge_deadline_local`, `min_charge_left_q`, `min_charge_tight`, `effective_kw`
+When `ev_allow_predicted_hours = on`, the deadline can be set up to
+`ev_planning_horizon_end_ts` — the end of the entire Nordpool Predict FI dataset.
+The planner ranks and selects slots across the whole window, potentially a week ahead.
+
+**Deadline guards (two automations):**
+
+| Automation | File | Clamps to | Status |
+|------------|------|-----------|--------|
+| `ev_deadline_guard_clamp_to_pricing_horizon` | `ev_effective_predict_and_control.yaml` | `ev_planning_horizon_end_ts` (full dynamic dataset) | ✅ Current/correct |
+| `ev_deadline_guard_clamp_to_predict_horizon` | `ev_prices_effective_and_plan.yaml` | `ev_predict_horizon_end_ts` = hardcoded `now + 12 h` | ❌ Legacy — conflicts with above |
+
+Both guards trigger on `input_datetime.ev_deadline`. Because both fire simultaneously, the
+legacy guard's `now + 12 h` clamp wins in practice. **Remove
+`ev_deadline_guard_clamp_to_predict_horizon`** to enable full-dataset planning.
 
 ---
 
@@ -269,6 +335,6 @@ Cable unplugged
 ## Configuration Notes
 
 - **Battery capacity**: hardcoded `62.0 kWh` in min-charge formula. Update if car changes.
-- **ApexCharts display fee**: `6.7 c/kWh` hardcoded in JavaScript data_generators (display only; does not affect control logic). The actual fee used in control is `input_number.ev_transfer_fee_eur_kwh`.
-- **Nested package location**: `ev_session_cost_v3.yaml` is in `packages/packages/` — ensure `configuration.yaml` uses `!include_dir_merge_named` (not `!include_dir_named`) so nested directories are scanned.
-- **Planning horizon**: always ≤ 12 h from now (limited by predict integration). The `ev_planning_horizon_end_ts` sensor is the authoritative upper bound.
+- **ApexCharts display fee**: `6.7 c/kWh` hardcoded in JavaScript data_generators (display only; does not affect control logic). The actual fee used in control is `input_number.ev_transfer_fee_eur_kwh` (0.06387 EUR/kWh = 6.387 c/kWh).
+- **Charger entity IDs**: `zag063912` is the Zaptec device ID. Search-replace with your device ID when adapting to a different charger.
+- **Battery entity**: `sensor.smart_battery` provides SOC. Replace with your car's SOC entity.

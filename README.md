@@ -7,11 +7,11 @@ control, and a full Lovelace dashboard.
 ## What it does
 
 - **Smart charging**: picks the cheapest 15-minute slots within your deadline
-- **Minimum charge level**: guarantees a minimum SOC by a configurable hour
-- **Charge Now override**: temporarily bypasses slot selection to charge immediately
+- **Multi-day forecast**: extends planning using Nordpool Predict FI hourly prices (typically 4–8 days); deadline can be pushed to the end of the entire predicted dataset
+- **Minimum charge level**: guarantees a minimum SOC by a configurable daily hour (default 08:00)
+- **Charge Now override**: temporarily bypasses slot selection to charge immediately; auto-disables when target is reached
 - **Plug-in takeover gate**: stops the charger on plug-in unless the current slot is active
 - **Session cost tracking**: accumulates real kWh cost for each charging session
-- **Forecast horizon**: optionally extends planning window using Nordpool 12h forecast
 
 ## File structure
 
@@ -37,7 +37,7 @@ docs/
 - Home Assistant 2024.x+
 - [Zaptec integration](https://github.com/custom-components/zaptec) — charger control
 - [Nordpool integration](https://github.com/custom-components/nordpool) — spot prices
-- [nordpool_predict_fi](https://github.com/...) — optional, for 12h forecast
+- [nordpool_predict_fi](https://github.com/...) — optional, for multi-day hourly price forecast
 - HACS frontend cards: Mushroom, ApexCharts-Card, Stack-in-Card, Card Mod
 
 ## Installation

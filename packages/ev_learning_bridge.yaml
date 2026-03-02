@@ -1,0 +1,321 @@
+# ev_learning_bridge.yaml
+# Connects sensor.ev_consumption_forecast (smart-ev-learning AppDaemon system)
+# to the EV smart charging planner.
+#
+# Design:
+#   ev_max_soc   — user's comfort ceiling. This file NEVER writes to it.
+#   ev_target_kwh — set on plug-in using price-responsive logic:
+#       if cheapest window slot < ev_bargain_price_threshold (c/kWh):
+#           fill to ev_max_soc ceiling  (cheap energy, fill up)
+#       else:
+#           charge only what trips need by the deadline  (normal prices)
+#
+# Requires:
+#   sensor.ev_consumption_forecast   (ev_predictor AppDaemon app)
+#   sensor.ev_price_slots_15m_effective  (ev_effective_predict_and_control.yaml)
+#   sensor.ev_days_to_deadline       (this file)
+#   sensor.smart_battery
+#   sensor.zag063912_charger_mode
+#   input_datetime.ev_deadline
+#   input_number.ev_max_soc          (user-managed, NOT written here)
+#   input_number.ev_target_kwh
+#   input_number.ev_bargain_price_threshold  (defined below, default 3 c/kWh)
+#   input_boolean.ev_smart_charge_enabled
+
+input_number:
+  ev_bargain_price_threshold:
+    name: "EV Bargain Price Threshold"
+    min: 0
+    max: 20
+    step: 0.5
+    unit_of_measurement: "c/kWh"
+    icon: mdi:tag-arrow-down
+    # When the cheapest slot in the charging window is at or below this threshold,
+    # the planner fills to ev_max_soc (opportunistic fill).
+    # Otherwise it charges only the minimum needed for trips by the deadline.
+    # Finnish spot reference: cheap nights 0-2 c, normal 5-15 c, expensive 20c+.
+    # Default 3 c/kWh catches very cheap overnight windows without being too aggressive.
+    initial: 3
+
+template:
+  - sensor:
+      - name: "EV Days to Deadline"
+        unique_id: ev_days_to_deadline
+        icon: mdi:calendar-clock
+        state: >-
+          {% set dl = states('input_datetime.ev_deadline') %}
+          {% if dl in ['unknown', 'unavailable', 'none', ''] %}
+            1
+          {% else %}
+            {% set raw = ((as_timestamp(dl) - as_timestamp(now())) / 86400)
+               | round(0, 'ceil') | int %}
+            {{ [raw, 1] | max }}
+          {% endif %}
+        attributes:
+          unit_of_measurement: "days"
+          friendly_name: "EV Days to Deadline"
+
+      - name: "EV Learning Forecast SOC"
+        unique_id: ev_learning_forecast_soc
+        unit_of_measurement: "%"
+        icon: mdi:battery-charging-80
+        state: >-
+          {# State = minimum SOC the car should have to cover trips by deadline.
+             Shown as max(current, needed) so it never reads below the current level. #}
+          {% set cumulative = state_attr('sensor.ev_consumption_forecast', 'cumulative_soc_pct') %}
+          {% if cumulative is none or cumulative | length == 0 %}
+            {{ states('input_number.ev_max_soc') | int(80) }}
+          {% else %}
+            {% set days = [[states('sensor.ev_days_to_deadline') | int(1), 1] | max,
+                           cumulative | length] | min %}
+            {% set needed_soc = cumulative[days - 1] | int %}
+            {% set current = states('sensor.smart_battery') | float(50) %}
+            {{ [[current, needed_soc] | max, 100] | min | round(0) | int }}
+          {% endif %}
+        attributes:
+          friendly_name: "EV Learning Forecast SOC (minimum)"
+          days_to_deadline: "{{ states('sensor.ev_days_to_deadline') | int(1) }}"
+          needed_soc_pct: >-
+            {% set cumulative = state_attr('sensor.ev_consumption_forecast', 'cumulative_soc_pct') %}
+            {% if cumulative is none or cumulative | length == 0 %}
+              0
+            {% else %}
+              {% set days = [[states('sensor.ev_days_to_deadline') | int(1), 1] | max,
+                             cumulative | length] | min %}
+              {{ cumulative[days - 1] | int }}
+            {% endif %}
+          add_kwh: >-
+            {# Energy to add to reach the trip minimum from current SOC #}
+            {% set cumulative = state_attr('sensor.ev_consumption_forecast', 'cumulative_soc_pct') %}
+            {% set current = states('sensor.smart_battery') | float(50) %}
+            {% set battery_kwh = state_attr('sensor.ev_consumption_forecast', 'battery_kwh') | float(62) %}
+            {% if cumulative is none or cumulative | length == 0 %}
+              0
+            {% else %}
+              {% set days = [[states('sensor.ev_days_to_deadline') | int(1), 1] | max,
+                             cumulative | length] | min %}
+              {% set needed = cumulative[days - 1] | int %}
+              {{ ([needed - current, 0] | max) / 100 * battery_kwh | round(2) }}
+            {% endif %}
+          confidence: >-
+            {% set days_arr = state_attr('sensor.ev_consumption_forecast', 'days') %}
+            {% if days_arr is none or days_arr | length == 0 %}
+              missing
+            {% else %}
+              {% set days = [[states('sensor.ev_days_to_deadline') | int(1), 1] | max,
+                             days_arr | length] | min %}
+              {{ days_arr[days - 1].get('confidence', 'missing') }}
+            {% endif %}
+          source: "ev_learning"
+
+      - name: "EV Learning Min Window Price"
+        unique_id: ev_learning_min_window_price
+        unit_of_measurement: "c/kWh"
+        icon: mdi:lightning-bolt
+        state: >-
+          {# Cheapest spot price (EUR/kWh × 100) available in the charging window.
+             Used for display and to drive the bargain-mode decision. #}
+          {% set dl = states('input_datetime.ev_deadline') %}
+          {% set dl_ts = as_timestamp(as_datetime(dl))
+             if dl not in ['unknown','unavailable','none',''] else (as_timestamp(now()) + 86400) %}
+          {% set ws = (as_timestamp(now()) // 900) * 900 %}
+          {% set slots = state_attr('sensor.ev_price_slots_15m_effective', 'data') | default([]) %}
+          {% set ns = namespace(min_p=999.0) %}
+          {% for s in slots %}
+            {% set ts = as_timestamp(s.DateTime) | float(0) %}
+            {% if ts >= ws and ts < dl_ts %}
+              {% if s.PriceWithTax | float(999) < ns.min_p %}
+                {% set ns.min_p = s.PriceWithTax | float %}
+              {% endif %}
+            {% endif %}
+          {% endfor %}
+          {{ (ns.min_p * 100) | round(1) if ns.min_p < 999 else 'n/a' }}
+        attributes:
+          friendly_name: "EV Min Price in Charging Window"
+          bargain_threshold_ct: "{{ states('input_number.ev_bargain_price_threshold') | float(3.0) }}"
+          bargain_active: >-
+            {% set min_p_eur = states('sensor.ev_learning_min_window_price') | float(999) / 100 %}
+            {% set threshold = states('input_number.ev_bargain_price_threshold') | float(3.0) / 100 %}
+            {{ min_p_eur < threshold }}
+
+  - binary_sensor:
+      - name: "EV Forecast Reliability Warning"
+        unique_id: ev_forecast_reliability_warning
+        device_class: problem
+        icon: mdi:weather-cloudy-alert
+        state: >-
+          {{ states('sensor.ev_days_to_deadline') | int(0) > 3 }}
+        attributes:
+          friendly_name: "EV Forecast Reliability Warning"
+          days_to_deadline: "{{ states('sensor.ev_days_to_deadline') | int(0) }}"
+          reliable_horizon: 3
+          message: >-
+            Deadline is {{ states('sensor.ev_days_to_deadline') }} days away.
+            Weather forecast is only reliable for 3 days. SOC estimate for
+            days 4+ is based on historical seasonal averages, not actual forecast.
+            Manual adjustment of ev_max_soc may be needed if conditions differ.
+
+automation:
+  - id: ev_learning_sync_on_plugin
+    alias: "EV Learning: set charge target on plug-in"
+    description: >
+      On plug-in, sets ev_target_kwh using price-responsive logic:
+      if the cheapest slot in the charging window is below ev_bargain_price_threshold,
+      fill to the ev_max_soc ceiling (opportunistic); otherwise charge only the
+      minimum needed for trips by the deadline (trip minimum from learning forecast).
+      Never writes to ev_max_soc — that remains user-controlled.
+    mode: single
+    triggers:
+      - trigger: state
+        entity_id: sensor.zag063912_charger_mode
+        to:
+          - connected_requesting
+          - connected_charging
+    conditions:
+      - condition: state
+        entity_id: input_boolean.ev_smart_charge_enabled
+        state: "on"
+      - condition: not
+        conditions:
+          - condition: state
+            entity_id: sensor.ev_consumption_forecast
+            state:
+              - unavailable
+              - unknown
+              - "none"
+    actions:
+      - variables:
+          # Snapshot of current state for notification (these are independent — safe in one block)
+          current_soc: "{{ states('sensor.smart_battery') | float(50) }}"
+          max_soc: "{{ states('input_number.ev_max_soc') | float(80) }}"
+          days_to_deadline: "{{ states('sensor.ev_days_to_deadline') | int(1) }}"
+          threshold_ct: "{{ states('input_number.ev_bargain_price_threshold') | float(3.0) }}"
+
+          # target_kwh: comprehensive self-contained template — reads everything from entities
+          # (no cross-references to other variables in this block, which HA does not support)
+          target_kwh: >-
+            {% set current_soc = states('sensor.smart_battery') | float(50) %}
+            {% set battery_kwh = state_attr('sensor.ev_consumption_forecast', 'battery_kwh') | float(62) %}
+            {% set max_soc = states('input_number.ev_max_soc') | float(80) %}
+            {% set days = states('sensor.ev_days_to_deadline') | int(1) %}
+            {% set threshold_eur = states('input_number.ev_bargain_price_threshold') | float(3.0) / 100 %}
+
+            {% set headroom_kwh = ([max_soc - current_soc, 0] | max) / 100 * battery_kwh %}
+
+            {% set c = state_attr('sensor.ev_consumption_forecast', 'cumulative_soc_pct') | default([]) %}
+            {% if c | length > 0 %}
+              {% set idx = [[days - 1, 0] | max, c | length - 1] | min %}
+              {% set needed_soc = c[idx] | int %}
+              {% set learning_kwh = ([needed_soc - current_soc, 0] | max) / 100 * battery_kwh %}
+            {% else %}
+              {% set learning_kwh = headroom_kwh %}
+            {% endif %}
+
+            {% set dl = states('input_datetime.ev_deadline') %}
+            {% set dl_ts = as_timestamp(as_datetime(dl))
+               if dl not in ['unknown','unavailable','none','']
+               else (as_timestamp(now()) + 86400) %}
+            {% set ws = (as_timestamp(now()) // 900) * 900 %}
+            {% set slots = state_attr('sensor.ev_price_slots_15m_effective', 'data') | default([]) %}
+            {% set ns = namespace(min_p=999.0) %}
+            {% for s in slots %}
+              {% set ts = as_timestamp(s.DateTime) | float(0) %}
+              {% if ts >= ws and ts < dl_ts %}
+                {% if s.PriceWithTax | float(999) < ns.min_p %}
+                  {% set ns.min_p = s.PriceWithTax | float %}
+                {% endif %}
+              {% endif %}
+            {% endfor %}
+
+            {{ (headroom_kwh if ns.min_p < threshold_eur else learning_kwh) | round(2) }}
+
+          # Cheapest window price for the notification (independent read — no cross-reference)
+          min_window_price_ct: >-
+            {% set dl = states('input_datetime.ev_deadline') %}
+            {% set dl_ts = as_timestamp(as_datetime(dl))
+               if dl not in ['unknown','unavailable','none','']
+               else (as_timestamp(now()) + 86400) %}
+            {% set ws = (as_timestamp(now()) // 900) * 900 %}
+            {% set slots = state_attr('sensor.ev_price_slots_15m_effective', 'data') | default([]) %}
+            {% set ns = namespace(min_p=999.0) %}
+            {% for s in slots %}
+              {% set ts = as_timestamp(s.DateTime) | float(0) %}
+              {% if ts >= ws and ts < dl_ts %}
+                {% if s.PriceWithTax | float(999) < ns.min_p %}
+                  {% set ns.min_p = s.PriceWithTax | float %}
+                {% endif %}
+              {% endif %}
+            {% endfor %}
+            {{ (ns.min_p * 100) | round(1) if ns.min_p < 999 else 'n/a' }}
+
+          # Bargain flag for notification message (independent read — no cross-reference)
+          bargain_mode: >-
+            {% set threshold_eur = states('input_number.ev_bargain_price_threshold') | float(3.0) / 100 %}
+            {% set dl = states('input_datetime.ev_deadline') %}
+            {% set dl_ts = as_timestamp(as_datetime(dl))
+               if dl not in ['unknown','unavailable','none','']
+               else (as_timestamp(now()) + 86400) %}
+            {% set ws = (as_timestamp(now()) // 900) * 900 %}
+            {% set slots = state_attr('sensor.ev_price_slots_15m_effective', 'data') | default([]) %}
+            {% set ns = namespace(min_p=999.0) %}
+            {% for s in slots %}
+              {% set ts = as_timestamp(s.DateTime) | float(0) %}
+              {% if ts >= ws and ts < dl_ts %}
+                {% if s.PriceWithTax | float(999) < ns.min_p %}
+                  {% set ns.min_p = s.PriceWithTax | float %}
+                {% endif %}
+              {% endif %}
+            {% endfor %}
+            {{ ns.min_p < threshold_eur }}
+
+      - action: input_number.set_value
+        target:
+          entity_id: input_number.ev_target_kwh
+        data:
+          value: "{{ target_kwh }}"
+
+      - action: persistent_notification.create
+        data:
+          notification_id: ev_learning_sync
+          title: "EV Charge Plan Updated"
+          message: >-
+            EV plugged in. Target: {{ target_kwh }} kWh
+            {% if bargain_mode %}
+            Mode: BARGAIN FILL — cheapest slot {{ (min_window_price_eur * 100) | round(1) }} c/kWh
+            is below {{ threshold_ct }} c/kWh threshold. Filling to {{ max_soc | round(0) }}% ceiling.
+            {% else %}
+            Mode: TRIP MINIMUM — {{ days_to_deadline }}-day forecast.
+            Min window price: {{ (min_window_price_eur * 100) | round(1) }} c/kWh
+            (threshold: {{ threshold_ct }} c/kWh, not cheap enough to fill up)
+            {% endif %}
+            Current SOC: {{ current_soc | round(0) }}%
+            {% if is_state('binary_sensor.ev_forecast_reliability_warning', 'on') %}
+            ⚠ Deadline beyond reliable forecast (3 days). Days 4+ use seasonal average.
+            {% endif %}
+
+  - id: ev_learning_deadline_reliability_alert
+    alias: "EV Learning: alert when deadline beyond reliable forecast"
+    description: >
+      Fires a persistent notification when the deadline is set beyond 3 days
+      (the reliable weather forecast horizon) and smart charging is enabled.
+    mode: single
+    triggers:
+      - trigger: state
+        entity_id: input_datetime.ev_deadline
+    conditions:
+      - condition: state
+        entity_id: input_boolean.ev_smart_charge_enabled
+        state: "on"
+      - condition: template
+        value_template: "{{ states('sensor.ev_days_to_deadline') | int(0) > 3 }}"
+    actions:
+      - action: persistent_notification.create
+        data:
+          notification_id: ev_learning_deadline_warning
+          title: "EV Deadline Beyond Reliable Forecast"
+          message: >-
+            EV deadline is {{ states('sensor.ev_days_to_deadline') }} days away.
+            Weather forecast is only reliable for 3 days — the SOC estimate for
+            days 4+ is based on historical seasonal averages, not actual weather.
+            You may want to adjust ev_max_soc manually if conditions differ from
+            the forecast.

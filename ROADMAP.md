@@ -5,7 +5,7 @@ Each phase is independent and can be implemented separately.
 
 ---
 
-## Phase 1 — ML consumption prediction → adaptive SOC target
+## Phase 1 — ML consumption prediction → adaptive SOC target ✅ COMPLETED
 
 **Goal:** Replace the manually set `ev_target_kwh` / `ev_max_soc` with a
 learned prediction of how much energy the driver will actually consume
@@ -13,31 +13,35 @@ before the next charging session. The system charges exactly what is needed
 rather than a fixed amount, avoiding both over-charging (battery degradation,
 wasted cost) and under-charging (range anxiety).
 
-**Inputs to the model:**
-- Historical per-session kWh consumed (from `ev_session_cost_v3.yaml`)
-- Day of week (Monday tends to need more range than Sunday)
-- Calendar events for the coming days (meetings, trips, etc.)
-- Season / daylight hours (winter increases consumption via heating)
-- Weather forecast (temperature, wind — affects range)
+**Status: Implemented** (2026-03)
 
-**How it works:**
-1. An AppDaemon or Python script trains a lightweight regression model
-   (e.g. gradient-boosted tree) on historical session data
-2. At each plug-in, the model predicts kWh needed before the next session
-3. The prediction is written to `input_number.ev_target_kwh` automatically
-4. A confidence band drives the SOC ceiling: if uncertainty is high, charge
-   to a slightly higher SOC; if the pattern is very predictable, charge to
-   exactly the predicted need
-5. The user can always override manually; the model re-learns from the
-   correction
+The final implementation uses an **exponentially weighted average (EWA, α=0.15)**
+per consumption profile rather than a gradient-boosted regression. Profiles are
+keyed on `season|temp_band|drive_type|trip_type|preheating` (~48 realistic
+combinations). This approach is simpler, fully explainable, requires no training
+infrastructure, and works with a small number of trips (5 per profile).
 
-**New entities needed:**
-- `input_number.ev_predicted_consumption_kwh` — model output
-- `input_number.ev_ml_confidence` — 0–1 confidence score
-- `sensor.ev_ml_last_trained` — timestamp of last training run
-- `input_boolean.ev_ml_enabled` — on/off toggle for adaptive mode
+**What was built (`smart-ev-learning` AppDaemon module):**
+- `ev_trip_logger.py` — records each drive segment (SOC, km, temp, preheat)
+- `model_updater.py` — builds the EWA consumption model from trip history
+- `predictor.py` — publishes 5-day SOC forecast to `sensor.ev_consumption_forecast`
 
-**Data store:** InfluxDB or a simple JSON file in `/config/` updated by AppDaemon
+**Integration (`ev_learning_bridge.yaml`):**
+- On plug-in: auto-sets `input_number.ev_target_kwh` using price-responsive logic
+  - Cheapest window slot < `ev_bargain_price_threshold` (default 3 c/kWh) → fill to ceiling
+  - Otherwise → minimum kWh for trips by deadline (from 5-day forecast)
+- Never writes to `ev_max_soc` — user controls the ceiling permanently
+- Reliability warning when deadline is beyond the 3-day weather forecast horizon
+
+**Entities delivered:**
+- `sensor.ev_consumption_forecast` — state = tomorrow SOC%; attributes: `days[]`,
+  `cumulative_soc_pct[]`, `cumulative_kwh[]`, `forecast_reliable_days`
+- `sensor.ev_learning_forecast_soc` — minimum SOC needed for trips by deadline
+- `sensor.ev_learning_min_window_price` — cheapest slot in charging window (c/kWh)
+- `input_number.ev_bargain_price_threshold` — opportunistic-fill threshold
+- `binary_sensor.ev_forecast_reliability_warning` — deadline beyond reliable horizon
+- Dashboard: new "Charging Strategy" card with SOC trajectory chart (2-day history +
+  4-day forecast), per-day forecast tiles, mode banner, and bargain threshold slider
 
 ---
 
@@ -275,17 +279,17 @@ data drive the decision.
 
 ## Priority order
 
-| Item | Effort | Value | Suggested order |
-|------|--------|-------|----------------|
-| 4 Step 1 — manual full-charge mode | Low | High (safety / range) | **First** |
-| 4 Step 2 — calendar trigger | Low–medium | High (convenience) | **Second** |
-| 1 — ML consumption prediction | Medium | High (cost + autonomy) | **Third** |
-| Design study — rolling horizon | Low (analysis only) | Strategic | **Alongside Phase 1** |
-| 2 — Grid load awareness | Medium–high | High (infrastructure safety) | **Fourth** |
-| 3 — HTML web UI | High | Medium (UX polish) | **Last** |
+| Item | Effort | Value | Status |
+|------|--------|-------|--------|
+| 1 — ML consumption prediction | Medium | High (cost + autonomy) | ✅ **DONE** |
+| 4 Step 1 — manual full-charge mode | Low | High (safety / range) | **Next** |
+| 4 Step 2 — calendar trigger | Low–medium | High (convenience) | After 4.1 |
+| Design study — rolling horizon | Low (analysis only) | Strategic | Alongside Phase 4 |
+| 2 — Grid load awareness | Medium–high | High (infrastructure safety) | Future |
+| 3 — HTML web UI | High | Medium (UX polish) | Last |
 
-Phase 4 Step 1 is pure YAML / automation, provides immediate practical
-value, and does not depend on any other phase. Phase 1 (ML) and the rolling
-horizon study are tightly coupled and should proceed together. Phase 2 can
-share the AppDaemon infrastructure built for Phase 1. Phase 3 is an
-independent UI rewrite that can happen at any time.
+Phase 1 (ML) is complete. Phase 4 Step 1 is next: pure YAML / automation,
+provides immediate practical value (safe 100% charge for long trips), and
+does not depend on any other phase. Phase 2 can share the AppDaemon
+infrastructure built for Phase 1. Phase 3 is an independent UI rewrite
+that can happen at any time.

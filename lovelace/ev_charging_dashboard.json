@@ -7,6 +7,261 @@
       "type": "masonry",
       "cards": [
         {
+          "type": "conditional",
+          "conditions": [
+            {
+              "entity": "binary_sensor.ev_forecast_reliability_warning",
+              "state": "on"
+            }
+          ],
+          "card": {
+            "type": "custom:mushroom-template-card",
+            "primary": "Deadline beyond reliable forecast (3 days)",
+            "secondary": "{% set days = states('sensor.ev_days_to_deadline') | int(0) %}{% set cumu = state_attr('sensor.ev_consumption_forecast', 'cumulative_soc_pct') %}{% set d3 = cumu[2] if cumu and cumu | length > 2 else '?' %}Days 1-3: {{ d3 }}% | Days 4+: estimate only ({{ days }} days to deadline)",
+            "icon": "mdi:weather-cloudy-alert",
+            "icon_color": "orange",
+            "entity": "binary_sensor.ev_forecast_reliability_warning",
+            "tap_action": {
+              "action": "more-info"
+            }
+          }
+        },
+        {
+          "type": "vertical-stack",
+          "cards": [
+            {
+              "type": "horizontal-stack",
+              "cards": [
+                {
+                  "type": "custom:mushroom-template-card",
+                  "primary": "{{ states('sensor.smart_battery') | int }}%",
+                  "secondary": "SOC nyt",
+                  "icon": "mdi:car-electric",
+                  "icon_color": "deepskyblue",
+                  "entity": "sensor.smart_battery",
+                  "tap_action": {
+                    "action": "more-info"
+                  }
+                },
+                {
+                  "type": "custom:mushroom-template-card",
+                  "primary": "{% set dl = states('input_datetime.ev_deadline') %}{% if dl not in ['unknown','unavailable','none',''] %}{{ dl | as_datetime | strftime('%a %d.%m %H:%M') }}{% else %}Not set{% endif %}",
+                  "secondary": "Deadline",
+                  "icon": "mdi:calendar-clock",
+                  "icon_color": "orange",
+                  "entity": "input_datetime.ev_deadline",
+                  "tap_action": {
+                    "action": "more-info"
+                  }
+                },
+                {
+                  "type": "custom:mushroom-template-card",
+                  "primary": "{{ states('input_number.ev_max_soc') | int }}%",
+                  "secondary": "Max SOC",
+                  "icon": "mdi:battery-high",
+                  "icon_color": "green",
+                  "entity": "input_number.ev_max_soc",
+                  "tap_action": {
+                    "action": "more-info"
+                  }
+                }
+              ]
+            },
+            {
+              "type": "custom:mushroom-template-card",
+              "primary": "{% if state_attr('sensor.ev_learning_min_window_price', 'bargain_active') %}Latausstrategia: BARGAIN FILL{% else %}Latausstrategia: TRIP MINIMUM{% endif %}",
+              "secondary": "{% if state_attr('sensor.ev_learning_min_window_price', 'bargain_active') %}Halvin ikkuna {{ states('sensor.ev_learning_min_window_price') }} c/kWh \u2264 {{ state_attr('sensor.ev_learning_min_window_price', 'bargain_threshold_ct') }} c/kWh \u2014 ladataan {{ states('input_number.ev_max_soc') | int }}% kattoon{% else %}Ladataan matkan minimi \u2014 {{ states('input_number.ev_target_kwh') | round(1) }} kWh / {{ states('sensor.ev_days_to_deadline') }}-p\u00e4iv\u00e4n ennuste{% endif %}",
+              "icon": "{% if state_attr('sensor.ev_learning_min_window_price', 'bargain_active') %}mdi:lightning-bolt{% else %}mdi:routes{% endif %}",
+              "icon_color": "{% if state_attr('sensor.ev_learning_min_window_price', 'bargain_active') %}green{% else %}blue{% endif %}",
+              "fill_container": true,
+              "entity": "sensor.ev_learning_min_window_price",
+              "tap_action": {
+                "action": "more-info"
+              }
+            },
+            {
+              "type": "custom:apexcharts-card",
+              "graph_span": "6d",
+              "span": {
+                "end": "+4d"
+              },
+              "now": {
+                "show": true,
+                "label": "Nyt"
+              },
+              "header": {
+                "show": true,
+                "title": "SOC-ennuste",
+                "show_states": false
+              },
+              "apex_config": {
+                "chart": {
+                  "height": 240,
+                  "toolbar": {
+                    "show": false
+                  }
+                },
+                "grid": {
+                  "strokeDashArray": 3
+                },
+                "xaxis": {
+                  "type": "datetime",
+                  "labels": {
+                    "datetimeUTC": false,
+                    "format": "EEE d.M"
+                  }
+                },
+                "yaxis": {
+                  "min": 0,
+                  "max": 100,
+                  "tickAmount": 5,
+                  "title": {
+                    "text": "SOC (%)"
+                  }
+                },
+                "stroke": {
+                  "dashArray": [
+                    0,
+                    0,
+                    5
+                  ]
+                },
+                "markers": {
+                  "size": [
+                    0,
+                    0,
+                    5
+                  ]
+                },
+                "dataLabels": {
+                  "enabled": true,
+                  "enabledOnSeries": [
+                    2
+                  ],
+                  "formatter": "EVAL:function(v){ return v !== null ? Math.round(v)+'%' : ''; }",
+                  "background": {
+                    "enabled": true,
+                    "borderRadius": 4,
+                    "opacity": 0.85
+                  }
+                },
+                "legend": {
+                  "show": true
+                }
+              },
+              "series": [
+                {
+                  "name": "SOC historia",
+                  "entity": "sensor.smart_battery",
+                  "type": "line",
+                  "color": "deepskyblue",
+                  "stroke_width": 2,
+                  "curve": "smooth",
+                  "float_precision": 0,
+                  "show": {
+                    "in_header": false,
+                    "legend_value": false
+                  }
+                },
+                {
+                  "name": "Latausikkuna",
+                  "entity": "sensor.ev_consumption_forecast",
+                  "type": "area",
+                  "color": "deepskyblue",
+                  "opacity": 0.15,
+                  "stroke_width": 0,
+                  "curve": "stepline",
+                  "data_generator": "const now = Date.now();const maxSoc = parseFloat(hass.states['input_number.ev_max_soc']?.state || 80);const dlStr = hass.states['input_datetime.ev_deadline']?.state;const dlTs = dlStr ? new Date(dlStr).getTime() : now + 86400000;if (now >= dlTs) return [[now, null]];return [[now, maxSoc], [dlTs, maxSoc], [dlTs + 1, null]];",
+                  "show": {
+                    "in_header": false,
+                    "legend_value": false
+                  }
+                },
+                {
+                  "name": "SOC-ennuste",
+                  "entity": "sensor.ev_consumption_forecast",
+                  "type": "line",
+                  "color": "mediumseagreen",
+                  "stroke_width": 2,
+                  "curve": "smooth",
+                  "data_generator": "const now = Date.now();const battery = parseFloat(hass.states['sensor.smart_battery']?.state || 50);const maxSoc = parseFloat(hass.states['input_number.ev_max_soc']?.state || 80);const dlStr = hass.states['input_datetime.ev_deadline']?.state;const dlTs = dlStr ? new Date(dlStr).getTime() : now + 86400000;const cumulative = entity.attributes?.cumulative_soc_pct || [];const points = [[now, Math.round(battery)], [dlTs, Math.round(maxSoc)]];for (let i = 0; i < Math.min(cumulative.length, 4); i++) {  points.push([dlTs + (i + 1) * 86400000, Math.max(0, Math.round(maxSoc - cumulative[i]))]);}return points;",
+                  "show": {
+                    "in_header": false,
+                    "legend_value": false
+                  }
+                }
+              ]
+            },
+            {
+              "type": "horizontal-stack",
+              "cards": [
+                {
+                  "type": "custom:mushroom-template-card",
+                  "primary": "{{ states('sensor.smart_battery') | int }}%",
+                  "secondary": "Nyt",
+                  "icon": "{% set soc = states('sensor.smart_battery') | int(50) %}{% if soc >= 80 %}mdi:battery-80{% elif soc >= 60 %}mdi:battery-60{% elif soc >= 40 %}mdi:battery-40{% elif soc >= 20 %}mdi:battery-20{% else %}mdi:battery-low{% endif %}",
+                  "icon_color": "deepskyblue",
+                  "entity": "sensor.smart_battery",
+                  "tap_action": {
+                    "action": "more-info"
+                  }
+                },
+                {
+                  "type": "custom:mushroom-template-card",
+                  "primary": "{% set cumu = state_attr('sensor.ev_consumption_forecast', 'cumulative_soc_pct') %}{% set max_soc = states('input_number.ev_max_soc') | int(80) %}{% if cumu and cumu | length > 0 %}{{ [max_soc - cumu[0] | int, 0] | max }}%{% else %}-{% endif %}",
+                  "secondary": "{% set da = state_attr('sensor.ev_consumption_forecast', 'days') %}{% set rel = (da[0].forecast_reliable if da and da | length > 0 else true) %}{% if da and da | length > 0 %}{{ da[0].date | as_datetime | strftime('%a') }}{% if not rel %} \u26a0{% endif %}{% else %}Day 1{% endif %}",
+                  "icon": "{% set cumu = state_attr('sensor.ev_consumption_forecast', 'cumulative_soc_pct') %}{% set max_soc = states('input_number.ev_max_soc') | int(80) %}{% set da = state_attr('sensor.ev_consumption_forecast', 'days') %}{% set rel = (da[0].forecast_reliable if da and da | length > 0 else true) %}{% if not rel %}mdi:alert-circle-outline{% elif cumu and cumu | length > 0 %}{% set soc = [max_soc - cumu[0] | int, 0] | max %}{% if soc >= 80 %}mdi:battery-80{% elif soc >= 60 %}mdi:battery-60{% elif soc >= 40 %}mdi:battery-40{% elif soc >= 20 %}mdi:battery-20{% else %}mdi:battery-low{% endif %}{% else %}mdi:battery-unknown{% endif %}",
+                  "icon_color": "{% set da = state_attr('sensor.ev_consumption_forecast', 'days') %}{% set rel = (da[0].forecast_reliable if da and da | length > 0 else true) %}{% if not rel %}amber{% else %}green{% endif %}",
+                  "entity": "sensor.ev_consumption_forecast",
+                  "tap_action": {
+                    "action": "more-info"
+                  }
+                },
+                {
+                  "type": "custom:mushroom-template-card",
+                  "primary": "{% set cumu = state_attr('sensor.ev_consumption_forecast', 'cumulative_soc_pct') %}{% set max_soc = states('input_number.ev_max_soc') | int(80) %}{% if cumu and cumu | length > 1 %}{{ [max_soc - cumu[1] | int, 0] | max }}%{% else %}-{% endif %}",
+                  "secondary": "{% set da = state_attr('sensor.ev_consumption_forecast', 'days') %}{% set rel = (da[1].forecast_reliable if da and da | length > 1 else true) %}{% if da and da | length > 1 %}{{ da[1].date | as_datetime | strftime('%a') }}{% if not rel %} \u26a0{% endif %}{% else %}Day 2{% endif %}",
+                  "icon": "{% set cumu = state_attr('sensor.ev_consumption_forecast', 'cumulative_soc_pct') %}{% set max_soc = states('input_number.ev_max_soc') | int(80) %}{% set da = state_attr('sensor.ev_consumption_forecast', 'days') %}{% set rel = (da[1].forecast_reliable if da and da | length > 1 else true) %}{% if not rel %}mdi:alert-circle-outline{% elif cumu and cumu | length > 1 %}{% set soc = [max_soc - cumu[1] | int, 0] | max %}{% if soc >= 80 %}mdi:battery-80{% elif soc >= 60 %}mdi:battery-60{% elif soc >= 40 %}mdi:battery-40{% elif soc >= 20 %}mdi:battery-20{% else %}mdi:battery-low{% endif %}{% else %}mdi:battery-unknown{% endif %}",
+                  "icon_color": "{% set da = state_attr('sensor.ev_consumption_forecast', 'days') %}{% set rel = (da[1].forecast_reliable if da and da | length > 1 else true) %}{% if not rel %}amber{% else %}green{% endif %}",
+                  "entity": "sensor.ev_consumption_forecast",
+                  "tap_action": {
+                    "action": "more-info"
+                  }
+                },
+                {
+                  "type": "custom:mushroom-template-card",
+                  "primary": "{% set cumu = state_attr('sensor.ev_consumption_forecast', 'cumulative_soc_pct') %}{% set max_soc = states('input_number.ev_max_soc') | int(80) %}{% if cumu and cumu | length > 2 %}{{ [max_soc - cumu[2] | int, 0] | max }}%{% else %}-{% endif %}",
+                  "secondary": "{% set da = state_attr('sensor.ev_consumption_forecast', 'days') %}{% set rel = (da[2].forecast_reliable if da and da | length > 2 else true) %}{% if da and da | length > 2 %}{{ da[2].date | as_datetime | strftime('%a') }}{% if not rel %} \u26a0{% endif %}{% else %}Day 3{% endif %}",
+                  "icon": "{% set cumu = state_attr('sensor.ev_consumption_forecast', 'cumulative_soc_pct') %}{% set max_soc = states('input_number.ev_max_soc') | int(80) %}{% set da = state_attr('sensor.ev_consumption_forecast', 'days') %}{% set rel = (da[2].forecast_reliable if da and da | length > 2 else true) %}{% if not rel %}mdi:alert-circle-outline{% elif cumu and cumu | length > 2 %}{% set soc = [max_soc - cumu[2] | int, 0] | max %}{% if soc >= 80 %}mdi:battery-80{% elif soc >= 60 %}mdi:battery-60{% elif soc >= 40 %}mdi:battery-40{% elif soc >= 20 %}mdi:battery-20{% else %}mdi:battery-low{% endif %}{% else %}mdi:battery-unknown{% endif %}",
+                  "icon_color": "{% set da = state_attr('sensor.ev_consumption_forecast', 'days') %}{% set rel = (da[2].forecast_reliable if da and da | length > 2 else true) %}{% if not rel %}amber{% else %}green{% endif %}",
+                  "entity": "sensor.ev_consumption_forecast",
+                  "tap_action": {
+                    "action": "more-info"
+                  }
+                },
+                {
+                  "type": "custom:mushroom-template-card",
+                  "primary": "{% set cumu = state_attr('sensor.ev_consumption_forecast', 'cumulative_soc_pct') %}{% set max_soc = states('input_number.ev_max_soc') | int(80) %}{% if cumu and cumu | length > 3 %}{{ [max_soc - cumu[3] | int, 0] | max }}%{% else %}-{% endif %}",
+                  "secondary": "{% set da = state_attr('sensor.ev_consumption_forecast', 'days') %}{% set rel = (da[3].forecast_reliable if da and da | length > 3 else true) %}{% if da and da | length > 3 %}{{ da[3].date | as_datetime | strftime('%a') }}{% if not rel %} \u26a0{% endif %}{% else %}Day 4 \u26a0{% endif %}",
+                  "icon": "{% set cumu = state_attr('sensor.ev_consumption_forecast', 'cumulative_soc_pct') %}{% set max_soc = states('input_number.ev_max_soc') | int(80) %}{% set da = state_attr('sensor.ev_consumption_forecast', 'days') %}{% set rel = (da[3].forecast_reliable if da and da | length > 3 else true) %}{% if not rel %}mdi:alert-circle-outline{% elif cumu and cumu | length > 3 %}{% set soc = [max_soc - cumu[3] | int, 0] | max %}{% if soc >= 80 %}mdi:battery-80{% elif soc >= 60 %}mdi:battery-60{% elif soc >= 40 %}mdi:battery-40{% elif soc >= 20 %}mdi:battery-20{% else %}mdi:battery-low{% endif %}{% else %}mdi:battery-unknown{% endif %}",
+                  "icon_color": "{% set da = state_attr('sensor.ev_consumption_forecast', 'days') %}{% set rel = (da[3].forecast_reliable if da and da | length > 3 else true) %}{% if not rel %}amber{% else %}green{% endif %}",
+                  "entity": "sensor.ev_consumption_forecast",
+                  "tap_action": {
+                    "action": "more-info"
+                  }
+                }
+              ]
+            },
+            {
+              "type": "custom:mushroom-number-card",
+              "entity": "input_number.ev_bargain_price_threshold",
+              "name": "Bargain fill threshold",
+              "icon": "mdi:tag-arrow-down",
+              "display_mode": "slider"
+            }
+          ]
+        },
+        {
           "type": "vertical-stack",
           "cards": [
             {
@@ -131,6 +386,29 @@
                           "action": "more-info"
                         }
                       }
+                    },
+                    {
+                      "type": "conditional",
+                      "conditions": [
+                        {
+                          "entity": "sensor.ev_learning_min_window_price",
+                          "state_not": "unavailable"
+                        },
+                        {
+                          "entity": "sensor.ev_learning_min_window_price",
+                          "state_not": "unknown"
+                        }
+                      ],
+                      "chip": {
+                        "type": "template",
+                        "icon": "{% if state_attr('sensor.ev_learning_min_window_price', 'bargain_active') %}mdi:tag-arrow-down{% else %}mdi:routes{% endif %}",
+                        "icon_color": "{% if state_attr('sensor.ev_learning_min_window_price', 'bargain_active') %}green{% else %}indigo{% endif %}",
+                        "content": "{% if state_attr('sensor.ev_learning_min_window_price', 'bargain_active') %}Bargain{% else %}Trip min{% endif %}",
+                        "entity": "sensor.ev_learning_min_window_price",
+                        "tap_action": {
+                          "action": "more-info"
+                        }
+                      }
                     }
                   ]
                 }
@@ -180,11 +458,62 @@
               ]
             },
             {
-              "type": "custom:mushroom-number-card",
-              "entity": "number.ev_target_energy_kwh_ui",
-              "name": "Target energy (kWh)",
-              "icon": "mdi:battery-plus",
-              "display_mode": "slider"
+              "type": "custom:stack-in-card",
+              "mode": "vertical",
+              "cards": [
+                {
+                  "type": "conditional",
+                  "conditions": [
+                    {
+                      "entity": "input_boolean.ev_smart_charge_enabled",
+                      "state": "on"
+                    }
+                  ],
+                  "card": {
+                    "type": "custom:mushroom-template-card",
+                    "primary": "{{ states('input_number.ev_target_kwh') | float(0) | round(1) }} kWh auto-target",
+                    "secondary": "{% if state_attr('sensor.ev_learning_min_window_price', 'bargain_active') %}BARGAIN FILL \u2014 {{ states('sensor.ev_learning_min_window_price') }} c/kWh{% else %}TRIP MINIMUM \u2014 {{ states('sensor.ev_days_to_deadline') }}-day forecast{% endif %}",
+                    "icon": "{% if state_attr('sensor.ev_learning_min_window_price', 'bargain_active') %}mdi:tag-arrow-down{% else %}mdi:map-marker-distance{% endif %}",
+                    "icon_color": "{% if state_attr('sensor.ev_learning_min_window_price', 'bargain_active') %}green{% else %}blue{% endif %}",
+                    "entity": "input_number.ev_target_kwh",
+                    "tap_action": {
+                      "action": "more-info"
+                    }
+                  }
+                },
+                {
+                  "type": "conditional",
+                  "conditions": [
+                    {
+                      "entity": "input_boolean.ev_smart_charge_enabled",
+                      "state": "off"
+                    }
+                  ],
+                  "card": {
+                    "type": "vertical-stack",
+                    "cards": [
+                      {
+                        "type": "custom:mushroom-number-card",
+                        "entity": "number.ev_target_energy_kwh_ui",
+                        "name": "Target energy (kWh)",
+                        "icon": "mdi:battery-plus",
+                        "display_mode": "slider"
+                      },
+                      {
+                        "type": "custom:mushroom-template-card",
+                        "primary": "{% set cumu = state_attr('sensor.ev_consumption_forecast', 'cumulative_soc_pct') %}{% set days = states('sensor.ev_days_to_deadline') | int(1) %}{% set max_soc = states('input_number.ev_max_soc') | float(80) %}{% set batt_kwh = state_attr('sensor.ev_consumption_forecast', 'battery_kwh') | float(62) %}{% if cumu and cumu | length > 0 %}{% set idx = [[days - 1, 0] | max, cumu | length - 1] | min %}{% set needed = ([cumu[idx] | int - states('sensor.smart_battery') | float(50), 0] | max) / 100 * batt_kwh %}Forecast suggests {{ needed | round(1) }} kWh for {{ days }}-day trip{% else %}Forecast not yet available (learning){% endif %}",
+                        "secondary": "Enable smart charging to use auto-target",
+                        "icon": "mdi:information-outline",
+                        "icon_color": "grey",
+                        "entity": "sensor.ev_consumption_forecast",
+                        "tap_action": {
+                          "action": "more-info"
+                        }
+                      }
+                    ]
+                  }
+                }
+              ]
             },
             {
               "type": "custom:mushroom-number-card",
@@ -232,7 +561,7 @@
                 {
                   "type": "custom:mushroom-template-card",
                   "primary": "Charge Now status",
-                  "secondary": "{{ 'ACTIVE — charging to target, then auto-off' if is_state('input_boolean.ev_charge_now_override','on') else 'Inactive — normal smart schedule' }}",
+                  "secondary": "{{ 'ACTIVE \u2014 charging to target, then auto-off' if is_state('input_boolean.ev_charge_now_override','on') else 'Inactive \u2014 normal smart schedule' }}",
                   "icon": "{{ 'mdi:flash-circle' if is_state('input_boolean.ev_charge_now_override','on') else 'mdi:flash-off' }}",
                   "icon_color": "{{ 'red' if is_state('input_boolean.ev_charge_now_override','on') else 'disabled' }}",
                   "entity": "input_boolean.ev_charge_now_override"
@@ -452,7 +781,7 @@
             },
             {
               "type": "markdown",
-              "content": "{%- set plan = state_attr('sensor.ev_plan_15m_rank_effective','planned_slots') or [] -%} {%- set min_plan = state_attr('sensor.ev_min_charge_plan','planned_slots') or [] -%} {%- set prices = state_attr('sensor.ev_price_slots_15m_effective','data') or [] -%} {%- set fee_c = 6.7 -%} {%- set days = ['ma','ti','ke','to','pe','la','su'] -%} {%- if plan | length == 0 -%}\n  Ei slotteja\n{%- else -%}\n  {%- for s in plan -%}\n    {%- set dt = as_local(as_datetime(s.ts | int(0))) -%}\n    {%- set base = (prices\n        | selectattr('DateTime','search', dt.strftime('%Y-%m-%dT%H:%M'))\n        | map(attribute='PriceWithTax')\n        | list\n        | first) | float(0) -%}\n    {{ days[dt.weekday()] }} {{ dt.strftime('%H:%M') }} · {{ (base * 100 + fee_c) | round(2) }} c/kWh{% if not loop.last %}<br>{% endif %}\n  {%- endfor -%}\n{%- endif -%}\n{%- if is_state('input_boolean.ev_min_charge_enabled','on') -%}\n  {%- if min_plan | length > 0 -%}\n    <br>**Min charge:**\n    {%- for s in (min_plan | sort(attribute='ts')) -%}\n      {%- set dt = as_local(as_datetime(s.ts | int(0))) -%}\n      {%- set base = (prices\n          | selectattr('DateTime','search', dt.strftime('%Y-%m-%dT%H:%M'))\n          | map(attribute='PriceWithTax')\n          | list\n          | first) | float(0) -%}\n      <br>{{ days[dt.weekday()] }} {{ dt.strftime('%H:%M') }} · {{ (base * 100 + fee_c) | round(2) }} c/kWh\n    {%- endfor -%}\n  {%- else -%}\n    <br>**Min charge:** target met\n  {%- endif -%}\n{%- endif -%}\n"
+              "content": "{%- set plan = state_attr('sensor.ev_plan_15m_rank_effective','planned_slots') or [] -%} {%- set min_plan = state_attr('sensor.ev_min_charge_plan','planned_slots') or [] -%} {%- set prices = state_attr('sensor.ev_price_slots_15m_effective','data') or [] -%} {%- set fee_c = 6.7 -%} {%- set days = ['ma','ti','ke','to','pe','la','su'] -%} {%- if plan | length == 0 -%}\n  Ei slotteja\n{%- else -%}\n  {%- for s in plan -%}\n    {%- set dt = as_local(as_datetime(s.ts | int(0))) -%}\n    {%- set base = (prices\n        | selectattr('DateTime','search', dt.strftime('%Y-%m-%dT%H:%M'))\n        | map(attribute='PriceWithTax')\n        | list\n        | first) | float(0) -%}\n    {{ days[dt.weekday()] }} {{ dt.strftime('%H:%M') }} \u00b7 {{ (base * 100 + fee_c) | round(2) }} c/kWh{% if not loop.last %}<br>{% endif %}\n  {%- endfor -%}\n{%- endif -%}\n{%- if is_state('input_boolean.ev_min_charge_enabled','on') -%}\n  {%- if min_plan | length > 0 -%}\n    <br>**Min charge:**\n    {%- for s in (min_plan | sort(attribute='ts')) -%}\n      {%- set dt = as_local(as_datetime(s.ts | int(0))) -%}\n      {%- set base = (prices\n          | selectattr('DateTime','search', dt.strftime('%Y-%m-%dT%H:%M'))\n          | map(attribute='PriceWithTax')\n          | list\n          | first) | float(0) -%}\n      <br>{{ days[dt.weekday()] }} {{ dt.strftime('%H:%M') }} \u00b7 {{ (base * 100 + fee_c) | round(2) }} c/kWh\n    {%- endfor -%}\n  {%- else -%}\n    <br>**Min charge:** target met\n  {%- endif -%}\n{%- endif -%}\n"
             }
           ]
         },
@@ -510,7 +839,7 @@
               "type": "custom:apexcharts-card",
               "header": {
                 "show": true,
-                "title": "Session cost (EUR) — history",
+                "title": "Session cost (EUR) \u2014 history",
                 "show_states": true,
                 "colorize_states": true
               },
@@ -556,7 +885,7 @@
           "type": "custom:apexcharts-card",
           "header": {
             "show": true,
-            "title": "Sähkön hinta ja tuulivoima",
+            "title": "S\u00e4hk\u00f6n hinta ja tuulivoima",
             "show_states": true,
             "colorize_states": true,
             "standard_format": true,
@@ -579,7 +908,7 @@
             "legend": {
               "show": false,
               "customLegendItems": [
-                "Sähkön hinta (¢/kWh)",
+                "S\u00e4hk\u00f6n hinta (\u00a2/kWh)",
                 "Tuulivoima (GW)"
               ]
             },
@@ -609,7 +938,7 @@
           "series": [
             {
               "entity": "sensor.nordpool_predict_fi_price",
-              "name": "Sähkön hinta",
+              "name": "S\u00e4hk\u00f6n hinta",
               "type": "line",
               "yaxis_id": "price",
               "extend_to": "now",
@@ -717,7 +1046,7 @@
             {
               "entity": "sensor.nordpool_predict_fi_price_now",
               "name": "Hinta nyt",
-              "unit": "¢",
+              "unit": "\u00a2",
               "float_precision": 1,
               "color": "dimgray",
               "show": {
@@ -762,7 +1091,7 @@
             {
               "entity": "sensor.nordpool_predict_fi_price_next_6h",
               "name": "Seuraavat 6h",
-              "unit": "¢",
+              "unit": "\u00a2",
               "float_precision": 1,
               "color": "dimgray",
               "color_threshold": [
@@ -806,7 +1135,7 @@
             {
               "entity": "sensor.nordpool_predict_fi_cheapest_6h_price_window",
               "name": "Halvin 6h",
-              "unit": "¢",
+              "unit": "\u00a2",
               "float_precision": 1,
               "color": "dimgray",
               "color_threshold": [
@@ -868,7 +1197,7 @@
                 "tickAmount": 4,
                 "forceNiceScale": true,
                 "title": {
-                  "text": "Hinta (¢/kWh)"
+                  "text": "Hinta (\u00a2/kWh)"
                 }
               }
             },

@@ -6,7 +6,7 @@ control, and a full Lovelace dashboard.
 
 ## Key innovations
 
-Two design choices distinguish this system from commercial and open-source
+Three design choices distinguish this system from commercial and open-source
 alternatives:
 
 **1. Forecast-extended price horizon**
@@ -37,6 +37,31 @@ This dual-deadline approach is novel: it enables multi-day SOC top-up at
 minimum cost while providing a hard safety net for daily driving needs. No
 commercial charger or open-source scheduler implements both simultaneously.
 
+**3. Learning-based adaptive charge target with price-responsive fill**
+The system integrates with an AppDaemon ML module (`smart-ev-learning`) that
+learns actual driving consumption from history, grouped by season, temperature
+band, drive type, and trip length. On every plug-in, instead of relying on a
+manually set target, the system automatically determines how much to charge by
+combining two signals:
+
+- **Trip minimum**: how many kWh are needed to cover the predicted driving
+  between now and the deadline (from the 5-day consumption forecast, which
+  accounts for weather, season, and learned usage patterns)
+- **Bargain fill**: if the cheapest slot in the charging window is below a
+  configurable threshold (default 3 c/kWh), the system fills to the user's
+  `ev_max_soc` ceiling regardless of trip needs — taking advantage of very
+  cheap overnight electricity without any manual action
+
+The result behaves like an EV navigation system that tells you where to charge
+on a journey: it reasons about the "voyage" (now → deadline), the expected
+energy consumption per day, and the cheapest available "charging stations"
+(price slots), then sets exactly the right target automatically. The driver
+sets a deadline; the system handles everything else.
+
+A companion Lovelace card visualises the SOC trajectory — 2 days of actual
+history, a charging window fill, and a 4-day decay forecast — so the driver
+can see at a glance why the system made its decision.
+
 ---
 
 ## What it does
@@ -59,6 +84,7 @@ packages/
   ev_ui_sensors.yaml                      # UI/diagnostic template sensors & helper numbers
   ev_automations.yaml                     # All EV automations (guards, takeover, session tracking)
   ev_session_cost_v3.yaml                 # Session cost accumulator (real kWh × real price)
+  ev_learning_bridge.yaml                 # Bridge to smart-ev-learning: adaptive target + bargain fill
 
 lovelace/
   ev_charging_dashboard.json              # Full Lovelace dashboard (raw config for UI paste)
@@ -112,6 +138,11 @@ ROADMAP.md                                # Planned enhancements
 | `sensor.ev_schedule_check` | Human-readable schedule status |
 | `sensor.ev_plan_15m_rank_effective` | Planned charging slots (attributes) |
 | `binary_sensor.ev_should_charge_now_combined` | Master charge signal (all modes) |
+| `sensor.ev_days_to_deadline` | Days until `ev_deadline` (min 1) |
+| `sensor.ev_learning_forecast_soc` | Minimum SOC needed for trips by deadline (from ML forecast) |
+| `sensor.ev_learning_min_window_price` | Cheapest slot price in the charging window (c/kWh) |
+| `input_number.ev_bargain_price_threshold` | Price threshold for opportunistic fill (c/kWh, default 3) |
+| `binary_sensor.ev_forecast_reliability_warning` | On when deadline is beyond the 3-day reliable forecast horizon |
 
 ---
 
@@ -119,3 +150,13 @@ ROADMAP.md                                # Planned enhancements
 
 See [`docs/`](docs/) for architecture details and dashboard guide.
 See [`ROADMAP.md`](ROADMAP.md) for planned enhancements.
+
+---
+
+## License
+
+This project is released under a **custom non-commercial license** — free for personal, educational, and non-commercial use.
+
+For **commercial use** (integration into a paid product, service, or solution delivered to third parties), a separate written license agreement is required. See [`LICENSE`](LICENSE) for full terms or contact the author to discuss commercial licensing.
+
+© 2025 Jussi Vaahtikari

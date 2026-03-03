@@ -81,13 +81,17 @@
 | Smart #1 preheating sensor | EXISTS — `sensor.smart_pre_climate_active` (state=False) |
 | Smart #1 battery capacity (kWh) | **62.0 kWh** (from apps.yaml `battery_kwh: 62.0`) |
 | Smart #1 max AC charge rate (kW) | **~11 kW** (Zaptec max 16A × 3 phases × 230V = 11.04 kW) |
-| Nordpool entity name | `sensor.nordpool_kwh_fi_eur_4_095_0255` |
+| Nordpool raw spot entity | `sensor.nordpool_kwh_fi_eur_4_095_0255` (spot only, today+tomorrow) |
+| Nordpool Predict FI entity | `sensor.nordpool_predict_fi_price` (forecast, 194 hourly entries, ~8 days) |
+| Combined price sensor | `sensor.ev_price_slots_15m_effective` (merged spot+predict, 776 15-min slots, ~8 days) |
+| Price data for chart_data_writer | Use `sensor.ev_price_slots_15m_effective` — already merged and ranked |
+| Planning horizon | Spot: ~2 days, With predict: ~6-8 days (`sensor.ev_pricing_horizon_end_ts`) |
 | Nordpool attribute structure | See detailed section below |
 | Existing AppDaemon write pattern | `self.set_state()` — no retry, no error handling. See details below |
 | Session cost boundary detection | `input_boolean.ev_charge_session_active` + automations. See details below |
 | Slot ranking mechanism summary | Price-ascending sort in `ev_price_slots_15m_effective`. See details below |
 | Git baseline tag confirmed | `pre-ev-dashboard-baseline` at commit `be6381e` |
-| ev_session_cost_v3.yaml location | Nested: `/config/packages/packages/ev_session_cost_v3.yaml` on HA |
+| ev_session_cost_v3.yaml location | `/config/packages/ev_session_cost_v3.yaml` (moved from nested packages/packages/ during Session 0) |
 
 ### Verified Entity States (2026-03-03)
 
@@ -112,17 +116,27 @@
 | input_boolean.ev_min_charge_enabled | on | Min charge guard |
 | input_boolean.ev_charge_now_override | off | Manual override |
 
-### Nordpool Attribute Structure
+### Price Data Architecture
 
-- `today`: list of 96 floats (15-min resolution, EUR/kWh)
-- `tomorrow`: list of 96 floats (available after ~14:00 CET)
-- `raw_today`: list of 96 objects `{start: ISO, end: ISO, value: float}`
-- `raw_tomorrow`: list of 96 objects `{start: ISO, end: ISO, value: float}`
-- `current_price`: float (current 15-min slot price)
-- `tomorrow_valid`: boolean (whether tomorrow prices are published)
-- Other: average, min, max, mean, peak, off_peak_1, off_peak_2, low_price, price_percent_to_average
-- `price_in_cents`: boolean flag
-- `unit`: "kWh", `currency`: "EUR", `country`: "Finland", `region`: "FI"
+**Three-layer price pipeline:**
+
+1. **Raw Nordpool spot** (`sensor.nordpool_kwh_fi_eur_4_095_0255`): today+tomorrow only, 96 entries/day (15-min), EUR/kWh
+2. **Nordpool Predict FI** (`sensor.nordpool_predict_fi_price`): multi-day forecast, 194 hourly entries (~8 days), `forecast` attribute
+3. **Combined effective** (`sensor.ev_price_slots_15m_effective`): merged spot+predict, 776 15-min slots (~8 days), ranked by price
+   - Each entry: `{DateTime: ISO, Rank: int, PriceWithTax: float(EUR/kWh)}`
+   - Spot data takes priority where available; predict extends beyond spot horizon
+
+**For chart_data_writer.py:** Use `sensor.ev_price_slots_15m_effective` directly — it's already merged, ranked, and in 15-min resolution.
+
+**Horizon sensors:**
+- `sensor.ev_spot_horizon_end_ts` — end of confirmed spot data
+- `sensor.ev_pricing_horizon_end_ts` — end of combined spot+predict data (reliability cutoff)
+- `sensor.ev_planning_horizon_end_ts` — effective planning horizon (spot-only or combined, controlled by `input_boolean.ev_allow_predicted_hours`)
+
+**Raw Nordpool spot attributes** (for reference only — chart_data_writer uses the combined sensor):
+- `today`/`tomorrow`: lists of 96 floats (EUR/kWh)
+- `raw_today`/`raw_tomorrow`: lists of 96 objects `{start: ISO, end: ISO, value: float}`
+- `current_price`, `tomorrow_valid`, `price_in_cents`, `unit`: "kWh", `currency`: "EUR"
 
 ### AppDaemon Write Pattern
 
@@ -153,11 +167,10 @@ All existing scripts use `self.set_state(entity_id, state=value, attributes={...
 
 ### Surprises / Deviations from Plan
 
-1. **AppDaemon scripts are flat** in `/addon_configs/a0d7b954_appdaemon/apps/` — NOT in a `smart-ev-learning/` subdirectory. New scripts will need to be deployed to the flat directory unless we create the subdirectory on HA. The local mirror uses the subdirectory convention.
-2. **ev_session_cost_v3.yaml is nested** in `/config/packages/packages/` — double-nested packages directory on HA.
-3. **Smart #1 preheating sensor EXISTS** — `sensor.smart_pre_climate_active`. This means `preheat_compensator.py` can be implemented (not deferred).
-4. **Nordpool is 15-minute resolution** (96 entries/day), not hourly. The existing `ev_prices_effective_and_plan.yaml` already handles this.
-5. **Second device_tracker** `device_tracker.smartvehicle871` exists (iBeacon-based) alongside the GPS-based `device_tracker.smart_none`. Use `smart_none` for `ev_car_home` (it has GPS coords).
+1. **AppDaemon scripts are flat** in `/addon_configs/a0d7b954_appdaemon/apps/` — no `smart-ev-learning/` subdirectory on HA. Deploy new scripts to flat directory. Local mirror uses subdirectory convention for organization.
+2. **ev_session_cost_v3.yaml** was at `/config/packages/packages/` — FIXED: moved to `/config/packages/` during Session 0. `ha core check` passes after move.
+3. **Smart #1 preheating sensor EXISTS** — `sensor.smart_pre_climate_active`. `preheat_compensator.py` can be implemented (not deferred).
+4. **Two device_trackers** for Smart #1: `device_tracker.smart_none` (GPS with lat/long) and `device_tracker.smartvehicle871` (iBeacon). Correct one for `ev_car_home` TBD at implementation time.
 
 ---
 

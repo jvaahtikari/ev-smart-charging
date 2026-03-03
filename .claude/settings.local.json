@@ -29,7 +29,11 @@
       "Bash(ssh -i ~/.ssh/homeassistant root@homeassistant.local 'find /addon_configs/a0d7b954_appdaemon/logs/ -type f 2>/dev/null; find /addon_configs/a0d7b954_appdaemon/ -name \"\"*.log\"\" 2>/dev/null')",
       "Bash(ssh -i ~/.ssh/homeassistant root@homeassistant.local 'curl -s -H \"\"Authorization: Bearer $SUPERVISOR_TOKEN\"\" \"\"http://supervisor/addons/a0d7b954_appdaemon/info\"\" | python3 -c \"\"import sys,json; d=json.load\\(sys.stdin\\); data=d.get\\(\\\\\"\"data\\\\\"\",{}\\); print\\(f\\\\\"\"state={data.get\\(\\\\\"\"state\\\\\"\"\\)}\\\\nversion={data.get\\(\\\\\"\"version\\\\\"\"\\)}\\\\n\\\\\"\"\\)\"\"')",
       "Bash(ssh -i ~/.ssh/homeassistant root@homeassistant.local 'curl -s -H \"\"Authorization: Bearer $SUPERVISOR_TOKEN\"\" \"\"http://supervisor/addons/a0d7b954_appdaemon/logs\"\" 2>/dev/null | tail -40')",
-      "Bash(git add -A)"
+      "Bash(git add -A)",
+      "Bash(git commit:*)",
+      "Bash(git add PROGRESS.md)",
+      "Bash(ssh -i ~/.ssh/homeassistant root@homeassistant.local 'cp /config/packages/packages/ev_session_cost_v3.yaml /config/packages/ev_session_cost_v3.yaml && echo \"\"COPIED\"\" && ls /config/packages/ev_session_cost_v3.yaml')",
+      "Bash(git add .claude/settings.local.json)"
     ]
   }
 }

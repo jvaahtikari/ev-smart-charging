@@ -1,0 +1,42 @@
+heater_forecast:
+  module: heater_forecast
+  class: HeaterForecast
+
+  heaters_energy:
+    - sensor.jussin_huone_ilp_ja_pistorasiat_energy
+
+  temp_sources:
+    - sensor.vallox_outdoor_air
+    - sensor.autolle_temperature
+
+  history_days: 30
+  resolution_minutes: 15
+  forecast_slots: 96
+  t_base_grid: [10,11,12,13,14,15,16,17,18,19,20]
+
+  topic_state: "hf/heating_forecast/state"
+  topic_attrs: "hf/heating_forecast/attrs"
+
+ev_trip_logger:
+  module: ev_trip_logger
+  class: EVTripLogger
+  log_file: /config/ev_trips/trips.json
+
+ev_model_updater:
+  module: model_updater
+  class: EVModelUpdater
+  trips_file: /config/ev_trips/trips.json
+  model_file: /config/ev_trips/consumption_model.json
+  min_trips_per_profile: 5
+  learning_alpha: 0.15
+
+ev_predictor:
+  module: predictor
+  class: EVPredictor
+  model_file: /config/ev_trips/consumption_model.json
+  min_soc_threshold: 20
+  safety_buffer_soc: 5
+  battery_kwh: 62.0
+  typical_daily_km: 30
+  forecast_horizon_days: 5
+

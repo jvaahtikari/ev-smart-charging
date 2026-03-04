@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -c \"import yaml, sys; yaml.safe_load\\(open\\(sys.argv[1]\\)\\)\" \"/c/Projects/EV smart charging/.claude/worktrees/friendly-napier/packages/ev_ui_sensors.yaml\")",
+      "Bash(python -c \"import yaml, sys; yaml.safe_load\\(open\\(sys.argv[1], encoding=''utf-8''\\)\\)\" \"/c/Projects/EV smart charging/.claude/worktrees/friendly-napier/packages/ev_ui_sensors.yaml\")",
+      "Bash(python -m py_compile appdaemon/apps/smart-ev-learning/utils.py)",
+      "Bash(python -m py_compile appdaemon/apps/smart-ev-learning/startup_monitor.py)",
+      "Bash(python -m py_compile appdaemon/apps/smart-ev-learning/mode_resolver.py)",
+      "Bash(python -m py_compile appdaemon/apps/smart-ev-learning/status_narrator.py)",
+      "Bash(python -m py_compile appdaemon/apps/smart-ev-learning/chart_data_writer.py)",
+      "Bash(python -m py_compile appdaemon/apps/smart-ev-learning/predictor.py)",
+      "Bash(git add -A)"
+    ]
+  }
+}

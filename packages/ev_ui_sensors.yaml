@@ -796,3 +796,232 @@ template:
             keys={{ keys | join(',') }}
           {% endif %}
 
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Session 1 — Core Mode Entities
+# Added: 2026-03-04
+# 9 new sensors/binary sensors + 5 new input helpers.
+# Template sensors ev_active_mode and ev_status_narrative will be replaced by
+# AppDaemon-driven input_text + pass-through templates in Session 2.
+# ═══════════════════════════════════════════════════════════════════════════════
+
+  - sensor:
+
+      # ── sensor.ev_active_mode ────────────────────────────────────────────────
+      # Mode string per DESIGN_SPEC Section 2.2.
+      # Session 2: AppDaemon mode_resolver.py writes to input_text.ev_active_mode.
+      # This sensor is a pass-through template — entity_id sensor.ev_active_mode
+      # is preserved so all UI and automation references continue to work.
+      # Session 1 template logic is commented out below for rollback reference.
+      - name: "EV active mode"
+        unique_id: ev_active_mode
+        icon: mdi:car-electric-outline
+        state: "{{ states('input_text.ev_active_mode') or 'disabled' }}"
+        # Session 1 fallback (commented out — kept for rollback):
+        # state: >-
+        #   {%- set enabled     = is_state('input_boolean.ev_smart_charge_enabled','on') -%}
+        #   {%- set charge_now  = is_state('input_boolean.ev_charge_now_override','on') -%}
+        #   {%- set min_chg     = is_state('input_boolean.ev_min_charge_enabled','on') -%}
+        #   {%- set should      = is_state('binary_sensor.ev_should_charge_now_combined','on') -%}
+        #   {%- set warn        = is_state('binary_sensor.ev_forecast_reliability_warning','on') -%}
+        #   {%- set jrny        = is_state('input_boolean.ev_journey_mode_enabled','on') -%}
+        #   {%- set car_home    = is_state('device_tracker.smart_none','home') -%}
+        #   {%- set soc         = states('sensor.smart_battery') | float(100) -%}
+        #   {%- set min_soc     = states('input_number.ev_min_soc_pct') | float(30) -%}
+        #   {%- set cmode       = states('sensor.zag063912_charger_mode') -%}
+        #   {%- set not_plugged = cmode in ['disconnected','unknown'] -%}
+        #   {%- if warn -%} warning
+        #   {%- elif car_home and not_plugged and soc < min_soc -%} not_plugged
+        #   {%- elif charge_now -%} charge_now
+        #   {%- elif jrny and not car_home -%} journey_active
+        #   {%- elif min_chg and should -%} min_charge
+        #   {%- elif enabled and should -%} smart_charging
+        #   {%- elif enabled -%} smart_waiting
+        #   {%- else -%} disabled
+        #   {%- endif -%}
+
+      # ── sensor.ev_status_narrative ───────────────────────────────────────────
+      # Plain-English one-sentence status per DESIGN_SPEC Section 5.1.
+      # Session 2: AppDaemon status_narrator.py writes to input_text.ev_status_narrative.
+      # This sensor is a pass-through template — entity_id sensor.ev_status_narrative
+      # is preserved so all UI references continue to work.
+      # Session 1 template logic is commented out below for rollback reference.
+      - name: "EV status narrative"
+        unique_id: ev_status_narrative
+        icon: mdi:comment-text-outline
+        state: >-
+          {{ states('input_text.ev_status_narrative') or
+             'Smart charging is off. Charger will not run automatically.' }}
+        # Session 1 fallback (commented out — kept for rollback):
+        # state: >-
+        #   {%- set enabled     = is_state('input_boolean.ev_smart_charge_enabled','on') -%}
+        #   {%- set should      = is_state('binary_sensor.ev_should_charge_now_combined','on') -%}
+        #   {%- set warn        = is_state('binary_sensor.ev_forecast_reliability_warning','on') -%}
+        #   {%- set car_home    = is_state('device_tracker.smart_none','home') -%}
+        #   {%- set soc         = states('sensor.smart_battery') | float(100) -%}
+        #   {%- set min_soc     = states('input_number.ev_min_soc_pct') | float(30) -%}
+        #   {%- set cmode       = states('sensor.zag063912_charger_mode') -%}
+        #   {%- set not_plugged = cmode in ['disconnected','unknown'] -%}
+        #   {%- set dl          = states('input_datetime.ev_deadline') -%}
+        #   {%- set dl_ok       = dl not in ['unknown','unavailable','none',''] -%}
+        #   {%- set dl_str      = as_local(as_datetime(dl)).strftime('%H:%M') if dl_ok else '??' -%}
+        #   {%- if warn -%} Forecast data unreliable. Check smart charging settings.
+        #   {%- elif car_home and not_plugged and soc < min_soc -%}
+        #     {%- if dl_ok -%} Please plug in before {{ dl_str }} to meet tomorrow's target.
+        #     {%- else -%} Please plug in soon to meet tomorrow's target. {%- endif -%}
+        #   {%- elif car_home and not_plugged -%} {{ soc|round(0)|int }}% — no charge needed today.
+        #   {%- elif not enabled -%} Smart charging is off. Charger will not run automatically.
+        #   {%- elif should -%} Charging now in planned slot.
+        #   {%- elif enabled and dl_ok -%} Waiting for cheap slot. On track for {{ dl_str }}.
+        #   {%- else -%} Smart charging is off. Charger will not run automatically.
+        #   {%- endif -%}
+
+      # ── sensor.ev_last_target_decision ───────────────────────────────────────
+      # Session 2: predictor.py writes state + attributes to input_text.ev_last_target_decision.
+      # This sensor is a pass-through — state from input_text, attributes mirrored from it.
+      - name: "EV last target decision"
+        unique_id: ev_last_target_decision
+        icon: mdi:brain
+        state: "{{ states('input_text.ev_last_target_decision') or 'unknown' }}"
+        attributes:
+          decision_time: "{{ state_attr('input_text.ev_last_target_decision','decision_time') or 'unknown' }}"
+          mode: "{{ state_attr('input_text.ev_last_target_decision','mode') or 'unknown' }}"
+          profile_name: "{{ state_attr('input_text.ev_last_target_decision','profile_name') or 'unknown' }}"
+          profile_trips: "{{ state_attr('input_text.ev_last_target_decision','profile_trips') or 0 }}"
+          bargain_triggered: "{{ state_attr('input_text.ev_last_target_decision','bargain_triggered') or false }}"
+          window_min_price: "{{ state_attr('input_text.ev_last_target_decision','window_min_price') or 0 }}"
+          target_kwh: "{{ state_attr('input_text.ev_last_target_decision','target_kwh') or 0 }}"
+          target_soc_pct: "{{ state_attr('input_text.ev_last_target_decision','target_soc_pct') or 0 }}"
+
+      # ── sensor.ev_journey_projected_departure_soc ────────────────────────────
+      # Placeholder. journey_manager.py (Session 7) writes real values.
+      - name: "EV journey projected departure SOC"
+        unique_id: ev_journey_projected_departure_soc
+        unit_of_measurement: "%"
+        icon: mdi:map-marker-path
+        state: "0"
+
+      # ── sensor.ev_plan_cycle_cost ─────────────────────────────────────────────
+      # Placeholder. session_monitor.py (Session 3) fills real values.
+      - name: "EV plan cycle cost"
+        unique_id: ev_plan_cycle_cost
+        icon: mdi:cash-clock
+        state: "unknown"
+        attributes:
+          start_time: "unknown"
+          end_time: "unknown"
+          total_kwh: 0
+          total_cost_eur: 0
+          avg_price_ckwh: 0
+          extra_slots_cost_eur: 0
+
+      # ── sensor.ev_monthly_cost_summary ───────────────────────────────────────
+      # Placeholder. session_monitor.py (Session 3) fills real values.
+      - name: "EV monthly cost summary"
+        unique_id: ev_monthly_cost_summary
+        icon: mdi:calendar-month
+        state: "unknown"
+        attributes:
+          month: "unknown"
+          total_kwh: 0
+          total_cost_eur: 0
+          avg_price_ckwh: 0
+          cycle_count: 0
+
+      # ── sensor.ev_chart_data_updated ─────────────────────────────────────────
+      # Session 2: chart_data_writer.py writes timestamp to input_text.ev_chart_data_updated.
+      # UI watches this sensor to know when to re-fetch chart_data.json.
+      - name: "EV chart data updated"
+        unique_id: ev_chart_data_updated
+        icon: mdi:chart-line
+        state: "{{ states('input_text.ev_chart_data_updated') or 'unknown' }}"
+        attributes:
+          updated_at: "{{ states('input_text.ev_chart_data_updated') or 'unknown' }}"
+
+      # ── sensor.ev_system_ready ───────────────────────────────────────────────
+      # Session 2: startup_monitor.py writes 'true'/'false' to input_text.ev_system_ready.
+      # UI shows 'System starting...' until this reads 'true'.
+      - name: "EV system ready"
+        unique_id: ev_system_ready
+        icon: mdi:check-circle-outline
+        state: "{{ states('input_text.ev_system_ready') or 'false' }}"
+
+  - binary_sensor:
+
+      # ── binary_sensor.ev_car_home ────────────────────────────────────────────
+      # True when Smart #1 GPS device tracker reports home zone.
+      # Uses device_tracker.smart_none (GPS with lat/long, confirmed Session 0).
+      # NOT device_tracker.smartvehicle871 (iBeacon — never phone location).
+      - name: "EV car home"
+        unique_id: ev_car_home
+        device_class: presence
+        icon: mdi:home-account
+        state: "{{ is_state('device_tracker.smart_none', 'home') }}"
+
+
+# ─── Session 1: New Input Helpers ────────────────────────────────────────────
+
+input_boolean:
+  ev_journey_mode_enabled:
+    name: "EV Journey Mode Enabled"
+    initial: false
+    icon: mdi:map-marker-path
+  ev_preheat_from_grid:
+    name: "EV Preheat from Grid"
+    initial: false
+    icon: mdi:thermometer-auto
+
+input_datetime:
+  ev_departure_time:
+    name: "EV Departure Time"
+    has_date: true
+    has_time: true
+    icon: mdi:clock-start
+  ev_return_time:
+    name: "EV Return Time"
+    has_date: true
+    has_time: true
+    icon: mdi:clock-end
+
+input_number:
+  ev_grid_fixed_fee_ckwh:
+    name: "EV Grid Fixed Fee"
+    min: 0
+    max: 20
+    step: 0.5
+    initial: 6.5
+    unit_of_measurement: "c/kWh"
+    icon: mdi:transmission-tower
+    mode: slider
+
+# ─── Session 2: input_text backends for AppDaemon-written sensors ─────────────
+# AppDaemon scripts write to these; template sensors above read from them.
+# This pattern avoids HA template engine / AppDaemon set_state() conflicts.
+
+input_text:
+  ev_active_mode:
+    name: "EV Active Mode (backend)"
+    max: 64
+    initial: "disabled"
+    icon: mdi:car-electric-outline
+  ev_status_narrative:
+    name: "EV Status Narrative (backend)"
+    max: 255
+    initial: "Smart charging is off. Charger will not run automatically."
+    icon: mdi:comment-text-outline
+  ev_last_target_decision:
+    name: "EV Last Target Decision (backend)"
+    max: 64
+    initial: "unknown"
+    icon: mdi:brain
+  ev_chart_data_updated:
+    name: "EV Chart Data Updated (backend)"
+    max: 64
+    initial: "unknown"
+    icon: mdi:chart-line
+  ev_system_ready:
+    name: "EV System Ready (backend)"
+    max: 8
+    initial: "false"
+    icon: mdi:check-circle-outline
+

@@ -902,31 +902,32 @@ template:
         state: "0"
 
       # ── sensor.ev_plan_cycle_cost ─────────────────────────────────────────────
-      # Placeholder. session_monitor.py (Session 3) fills real values.
+      # Session 3: session_monitor.py writes to input_text.ev_plan_cycle_cost.
+      # Template reads state + attributes from input_text (same input_text pattern as Session 2).
       - name: "EV plan cycle cost"
         unique_id: ev_plan_cycle_cost
         icon: mdi:cash-clock
-        state: "unknown"
+        state: "{{ states('input_text.ev_plan_cycle_cost') or 'unknown' }}"
         attributes:
-          start_time: "unknown"
-          end_time: "unknown"
-          total_kwh: 0
-          total_cost_eur: 0
-          avg_price_ckwh: 0
-          extra_slots_cost_eur: 0
+          start_time: "{{ state_attr('input_text.ev_plan_cycle_cost','start_time') or 'unknown' }}"
+          end_time: "{{ state_attr('input_text.ev_plan_cycle_cost','end_time') or 'unknown' }}"
+          total_kwh: "{{ state_attr('input_text.ev_plan_cycle_cost','total_kwh') or 0 }}"
+          total_cost_eur: "{{ state_attr('input_text.ev_plan_cycle_cost','total_cost_eur') or 0 }}"
+          avg_price_ckwh: "{{ state_attr('input_text.ev_plan_cycle_cost','avg_price_ckwh') or 0 }}"
+          extra_slots_cost_eur: "{{ state_attr('input_text.ev_plan_cycle_cost','extra_slots_cost_eur') or 0 }}"
 
       # ── sensor.ev_monthly_cost_summary ───────────────────────────────────────
-      # Placeholder. session_monitor.py (Session 3) fills real values.
+      # Session 3: session_monitor.py writes to input_text.ev_monthly_cost_summary.
       - name: "EV monthly cost summary"
         unique_id: ev_monthly_cost_summary
         icon: mdi:calendar-month
-        state: "unknown"
+        state: "{{ states('input_text.ev_monthly_cost_summary') or 'unknown' }}"
         attributes:
-          month: "unknown"
-          total_kwh: 0
-          total_cost_eur: 0
-          avg_price_ckwh: 0
-          cycle_count: 0
+          month: "{{ state_attr('input_text.ev_monthly_cost_summary','month') or 'unknown' }}"
+          total_kwh: "{{ state_attr('input_text.ev_monthly_cost_summary','total_kwh') or 0 }}"
+          total_cost_eur: "{{ state_attr('input_text.ev_monthly_cost_summary','total_cost_eur') or 0 }}"
+          avg_price_ckwh: "{{ state_attr('input_text.ev_monthly_cost_summary','avg_price_ckwh') or 0 }}"
+          cycle_count: "{{ state_attr('input_text.ev_monthly_cost_summary','cycle_count') or 0 }}"
 
       # ── sensor.ev_chart_data_updated ─────────────────────────────────────────
       # Session 2: chart_data_writer.py writes timestamp to input_text.ev_chart_data_updated.
@@ -1024,4 +1025,16 @@ input_text:
     max: 8
     initial: "false"
     icon: mdi:check-circle-outline
+  # Session 3: session_monitor.py writes plan cycle state
+  ev_plan_cycle_cost:
+    name: "EV Plan Cycle Cost (backend)"
+    max: 32
+    initial: "unknown"
+    icon: mdi:cash-clock
+  # Session 3: session_monitor.py writes monthly summary state
+  ev_monthly_cost_summary:
+    name: "EV Monthly Cost Summary (backend)"
+    max: 32
+    initial: "unknown"
+    icon: mdi:calendar-month
 

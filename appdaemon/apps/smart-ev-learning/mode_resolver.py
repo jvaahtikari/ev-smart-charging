@@ -34,6 +34,8 @@ WATCHED_ENTITIES = [
     "input_boolean.ev_min_charge_enabled",
     "binary_sensor.ev_should_charge_now_combined",
     "binary_sensor.ev_forecast_reliability_warning",
+    # Session 3: shortfall recovery flag from session_monitor.py
+    "input_boolean.ev_shortfall_unrecoverable",
     "input_boolean.ev_journey_mode_enabled",
     "binary_sensor.ev_car_home",
     "sensor.smart_battery",
@@ -98,7 +100,9 @@ class EVModeResolver(hass.Hass):
         charge_now  = self._is_on("input_boolean.ev_charge_now_override")
         min_chg     = self._is_on("input_boolean.ev_min_charge_enabled")
         should      = self._is_on("binary_sensor.ev_should_charge_now_combined")
-        warn        = self._is_on("binary_sensor.ev_forecast_reliability_warning")
+        # P1 warning: forecast reliability OR shortfall unrecoverable (Session 3)
+        warn        = (self._is_on("binary_sensor.ev_forecast_reliability_warning")
+                       or self._is_on("input_boolean.ev_shortfall_unrecoverable"))
         journey     = self._is_on("input_boolean.ev_journey_mode_enabled")
         car_home    = self._is_on("binary_sensor.ev_car_home")
 

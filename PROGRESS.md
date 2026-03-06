@@ -69,6 +69,21 @@
 - [x] chart_data.json confirmed written
 - [x] Entity state spot-check: ev_active_mode=smart_charging ✓, ev_status_narrative="Charging now — slot 23:30–23:45 at 0.0 c/kWh." ✓, ev_system_ready=true ✓
 
+### Session 3 — Cost Tracking, Shortfall Recovery, No Plug-In Notification
+**Status:** COMPLETE (pending deployment)
+**Date started:** 2026-03-06
+
+- [x] Slot mechanism read and documented (Step 0 — see Session 3 Decisions below)
+- [x] ev_session_cost_v3.yaml read — no duplication confirmed
+- [x] session_monitor.py created — plan cycle tracking, 50%/75% checkpoints, monthly summary
+- [x] apps.yaml entry for ev_session_monitor added
+- [x] mode_resolver.py updated — ev_shortfall_unrecoverable added to P1 warning condition
+- [x] ev_ui_sensors.yaml updated — ev_plan_cycle_cost + ev_monthly_cost_summary input_text-backed; 2 new input_text entities added
+- [x] ev_automations.yaml updated — no-plug-in notification (Option A) + iOS actions + midnight reset + 3 new input_boolean helpers
+- [ ] After deployment: session_monitor.py loads in AppDaemon logs
+- [ ] After deployment: sensor.ev_plan_cycle_cost updates on simulated plug-in event
+- [ ] After deployment: notification fires when test conditions met (simulate via Developer Tools)
+
 ### Phase 2a — Core Entities + AppDaemon
 - [x] sensor.ev_active_mode (Session 1 template — AppDaemon pass-through in Session 2)
 - [x] sensor.ev_status_narrative (Session 1 template — AppDaemon pass-through in Session 2)
@@ -114,6 +129,19 @@
 | Slot ranking mechanism summary | Price-ascending sort in `ev_price_slots_15m_effective`. See details below |
 | Git baseline tag confirmed | `pre-ev-dashboard-baseline` at commit `be6381e` |
 | ev_session_cost_v3.yaml location | `/config/packages/ev_session_cost_v3.yaml` (moved from nested packages/packages/ during Session 0) |
+
+### Session 3 Decisions — Slot Mechanism (Step 0)
+
+| Field | Value |
+| --- | --- |
+| Slot ranking | `sensor.ev_price_slots_15m_effective.data` assigns `Rank` via price-ascending sort. Rank 1 = cheapest. |
+| Active slot list | `sensor.ev_plan_15m_rank_effective.planned_slots` — array of `{ts, rank}`. Selects cheapest `ceil(remaining_kWh / kWh_per_slot)` future slots within `[now, deadline)`. Recomputed as template sensor on every state change. |
+| Recalculation frequency | State-triggered (ev_smart_charge_enabled, ev_should_charge_now_15m_effective, ev_charge_now_override, ev_should_charge_now_min_charge, zag063912_charger_mode, HA start) + time_pattern every 15 min (quarter tick) + every 5 min at :10s (reconcile). |
+| Activation mechanism | `binary_sensor.ev_should_charge_now_15m_effective`: checks if current slot_ts is in `planned_slots`. `ev_control_effective_master` automation watches this binary sensor and starts/stops charger via `button.zag063912_resume_charging` / `button.zag063912_stop_charging`. |
+| Shortfall recovery compatibility | `input_boolean.ev_charge_now_override` is already part of `ev_should_charge_now_combined`. Activating it from session_monitor.py causes `ev_control_effective_master` to start charging — same mechanism, fully compatible. No modification to template sensors required. |
+| ev_session_cost_v3 entities used | `binary_sensor.ev3_session_active`, `sensor.ev3_session_delivered_kwh`, `input_number.ev3_session_cost_actual_eur` — read only, NOT duplicated. |
+| input_text pattern for new sensors | `sensor.ev_plan_cycle_cost` and `sensor.ev_monthly_cost_summary` converted to input_text pass-throughs (same pattern as Session 2: `input_text.ev_plan_cycle_cost`, `input_text.ev_monthly_cost_summary`). session_monitor.py writes to input_text entities with state + attributes. |
+| plan_cycle_data.json location | `/config/plan_cycle_data.json` — persists cycle history and current cycle state across AppDaemon restarts. |
 
 ### Session 2 Decisions
 
@@ -222,8 +250,8 @@ All existing scripts use `self.set_state(entity_id, state=value, attributes={...
 | --- | --- | --- |
 | journeyMode | false | Session 7 |
 | inTransitProjection | false | Session 7 |
-| costTracking | false | Session 3 |
-| shortfallAlerts | false | Session 3 |
+| costTracking | true | Session 3 ✓ |
+| shortfallAlerts | true | Session 3 ✓ |
 | gridFees | false | When entity created |
 | calendarTrigger | false | Session 9 |
 | mockMode | false | Never in production |

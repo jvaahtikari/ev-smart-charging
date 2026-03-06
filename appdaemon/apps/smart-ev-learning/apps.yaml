@@ -58,3 +58,9 @@ ev_chart_data_writer:
   module: chart_data_writer
   class: EVChartDataWriter
 
+# ─── Session 3: cost tracking + shortfall recovery ───────────────────────────
+
+ev_session_monitor:
+  module: session_monitor
+  class: EVSessionMonitor
+

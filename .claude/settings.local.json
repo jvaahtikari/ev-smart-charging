@@ -29,7 +29,32 @@
       "Bash(ssh -i ~/.ssh/homeassistant root@homeassistant.local \"journalctl -u addon_a0d7b954_appdaemon --since ''5 minutes ago'' --no-pager 2>/dev/null | grep -iE ''\\(EVMode|EVStatus|EVChart|EVStartup|EVPredictor|error|warning|loaded|starting\\)'' | tail -40\")",
       "Bash(ssh -i ~/.ssh/homeassistant root@homeassistant.local \"ha addons logs a0d7b954_appdaemon 2>&1 | tail -60\")",
       "Bash(ssh -i ~/.ssh/homeassistant root@homeassistant.local 'python3 -c \"\":*)",
-      "Bash(ssh -i ~/.ssh/homeassistant root@homeassistant.local ':*)"
+      "Bash(ssh -i ~/.ssh/homeassistant root@homeassistant.local ':*)",
+      "Bash(scp -i ~/.ssh/homeassistant appdaemon/apps/smart-ev-learning/session_monitor.py root@homeassistant.local:/addon_configs/a0d7b954_appdaemon/apps/)",
+      "Bash(scp -i ~/.ssh/homeassistant appdaemon/apps/smart-ev-learning/mode_resolver.py root@homeassistant.local:/addon_configs/a0d7b954_appdaemon/apps/)",
+      "Bash(scp -i ~/.ssh/homeassistant appdaemon/apps/smart-ev-learning/apps.yaml root@homeassistant.local:/addon_configs/a0d7b954_appdaemon/apps/)",
+      "Bash(scp -i ~/.ssh/homeassistant packages/ev_ui_sensors.yaml root@homeassistant.local:/config/packages/)",
+      "Bash(scp -i ~/.ssh/homeassistant packages/ev_automations.yaml root@homeassistant.local:/config/packages/)",
+      "Bash(ssh -i ~/.ssh/homeassistant root@homeassistant.local \"ha core check 2>&1\")",
+      "Bash(ssh -i ~/.ssh/homeassistant root@homeassistant.local \"ha core restart 2>&1 &\")",
+      "Bash(ssh -i ~/.ssh/homeassistant root@homeassistant.local \"grep -i ''EVSessionMonitor\\\\|ev_session_monitor\\\\|session_monitor'' /addon_configs/a0d7b954_appdaemon/logs/appdaemon.log 2>/dev/null | tail -20\")",
+      "Bash(ssh -i ~/.ssh/homeassistant root@homeassistant.local \"grep -i ''session_monitor\\\\|EVSessionMonitor'' /addon_configs/a0d7b954_appdaemon/logs/appdaemon.log 2>/dev/null | tail -20 || echo ''No log entries found yet''\")",
+      "Bash(ssh -i ~/.ssh/homeassistant root@homeassistant.local \"ls -la /addon_configs/a0d7b954_appdaemon/logs/ 2>/dev/null && tail -50 /addon_configs/a0d7b954_appdaemon/logs/appdaemon.log 2>/dev/null || echo ''log not found''\")",
+      "Bash(ssh -i ~/.ssh/homeassistant root@homeassistant.local \"find /addon_configs/a0d7b954_appdaemon -name ''*.log'' 2>/dev/null | head -10\")",
+      "Bash(ssh -i ~/.ssh/homeassistant root@homeassistant.local \"find /addon_configs/a0d7b954_appdaemon -maxdepth 3 -type f 2>/dev/null | head -20\")",
+      "Bash(ssh -i ~/.ssh/homeassistant root@homeassistant.local \"ha addons logs a0d7b954_appdaemon 2>/dev/null | grep -i ''session_monitor\\\\|EVSessionMonitor\\\\|error\\\\|Error'' | tail -30\")",
+      "Bash(ssh -i ~/.ssh/homeassistant root@homeassistant.local \"ha addons logs a0d7b954_appdaemon 2>/dev/null | grep -i ''EVSessionMonitor\\\\|initializ\\\\|ready\\\\|cycle_active'' | tail -20\")",
+      "Bash(ssh -i ~/.ssh/homeassistant root@homeassistant.local \"ha addons logs a0d7b954_appdaemon 2>/dev/null | grep -i ''session\\\\|monitor\\\\|Mode\\\\|resolver'' | tail -30\")",
+      "Bash(ssh -i ~/.ssh/homeassistant root@homeassistant.local \"ha addons logs a0d7b954_appdaemon 2>/dev/null | grep -i ''INFO\\\\|WARNING\\\\|ERROR'' | grep -v ''thread\\\\|state_changed\\\\|process_event\\\\|thread_async'' | tail -30\")",
+      "Bash(ssh -i ~/.ssh/homeassistant root@homeassistant.local \"ha addons logs a0d7b954_appdaemon --follow=false 2>/dev/null | grep -E ''ev_session_monitor|EVSessionMonitor|ev_mode_resolver|EVModeResolver|initializ|ready|WARNING|ERROR'' | grep -v ''thread\\\\.'' | tail -30\")",
+      "Bash(ssh -i ~/.ssh/homeassistant root@homeassistant.local \"ha addons logs a0d7b954_appdaemon 2>/dev/null | grep -v DEBUG | tail -40\")",
+      "Bash(ssh -i ~/.ssh/homeassistant root@homeassistant.local \"ha addons logs a0d7b954_appdaemon 2>/dev/null | tail -5\")",
+      "Bash(ssh -i ~/.ssh/homeassistant root@homeassistant.local \"ha core states 2>/dev/null | python3 -c \"\":*)",
+      "Bash(python3 -c 'import sys,json; t=json.load\\(sys.stdin\\); print\\(list\\(t[\\\\\"\"data\\\\\"\"][\\\\\"\"tokens\\\\\"\"].values\\(\\)\\)[0][\\\\\"\"token\\\\\"\"]\\)')",
+      "Bash(python3 -c 'import sys,json; d=json.load\\(sys.stdin\\); print\\(d[\\\\\"\"entity_id\\\\\"\"],\\\\\"\"=\\\\\"\",d[\\\\\"\"state\\\\\"\"]\\)')",
+      "Bash(echo 'trying another approach' \")",
+      "Bash(ssh -i ~/.ssh/homeassistant root@homeassistant.local \"grep -r ''ev_shortfall_unrecoverable\\\\|ev_no_plugin_notified\\\\|ev_plan_cycle_cost'' /config/.storage/ 2>/dev/null | head -5\")",
+      "Bash(ssh -i ~/.ssh/homeassistant root@homeassistant.local \"ha addons logs a0d7b954_appdaemon 2>/dev/null | grep -v ''DEBUG AppDaemon\\\\|thread_async\\\\|process_event\\\\|Old state\\\\|New state'' | tail -40\")"
     ]
   }
 }

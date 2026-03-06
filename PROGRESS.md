@@ -80,8 +80,9 @@
 - [x] mode_resolver.py updated — ev_shortfall_unrecoverable added to P1 warning condition
 - [x] ev_ui_sensors.yaml updated — ev_plan_cycle_cost + ev_monthly_cost_summary input_text-backed; 2 new input_text entities added
 - [x] ev_automations.yaml updated — no-plug-in notification (Option A) + iOS actions + midnight reset + 3 new input_boolean helpers
-- [ ] After deployment: session_monitor.py loads in AppDaemon logs
-- [ ] After deployment: sensor.ev_plan_cycle_cost updates on simulated plug-in event
+- [x] After deployment: session_monitor.py loads in AppDaemon logs (thread-8 pinned, ev_session_monitor confirmed)
+- [x] After deployment: new entities registered — input_boolean.ev_shortfall_unrecoverable=off, input_boolean.ev_no_plugin_notified, input_text.ev_plan_cycle_cost, sensor.ev_plan_cycle_cost all confirmed in entity registry
+- [ ] After deployment: sensor.ev_plan_cycle_cost updates on simulated plug-in event (verify via Developer Tools)
 - [ ] After deployment: notification fires when test conditions met (simulate via Developer Tools)
 
 ### Phase 2a — Core Entities + AppDaemon

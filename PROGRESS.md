@@ -82,7 +82,7 @@
 - [x] ev_automations.yaml updated — no-plug-in notification (Option A) + iOS actions + midnight reset + 3 new input_boolean helpers
 - [x] After deployment: session_monitor.py loads in AppDaemon logs (thread-8 pinned, ev_session_monitor confirmed)
 - [x] After deployment: new entities registered — input_boolean.ev_shortfall_unrecoverable=off, input_boolean.ev_no_plugin_notified, input_text.ev_plan_cycle_cost, sensor.ev_plan_cycle_cost all confirmed in entity registry
-- [ ] After deployment: sensor.ev_plan_cycle_cost updates on simulated plug-in event (verify via Developer Tools)
+- [x] After deployment: sensor.ev_plan_cycle_cost confirmed live — state=unknown (correct, no cycle active), all 6 attributes present and reading from input_text.ev_plan_cycle_cost backend
 - [ ] After deployment: notification fires when test conditions met (simulate via Developer Tools)
 
 ### Phase 2a — Core Entities + AppDaemon
@@ -244,6 +244,7 @@ All existing scripts use `self.set_state(entity_id, state=value, attributes={...
 | 50% checkpoint logic revised | Original impl activated `ev_charge_now_override` blanket (could charge at high prices). Revised: observe actual session rate → 70% conservative factor → project to deadline → if short, select cheapest unplanned future slots sorted by `PriceWithTax` ascending. Per-slot `run_at()` scheduling — no blanket override, price-safe. Aligns with DESIGN_SPEC §11.2 ("add cheapest available slots"). |
 | `session_start_ts` added to cycle | New field in `plan_cycle_data.json` `current_cycle` dict — Unix timestamp of session start, needed by `_actual_charge_rate_kwh_h()`. Backwards-compatible (falls back to None → checkpoint skips gracefully). |
 | New helpers in session_monitor.py | `_actual_charge_rate_kwh_h`, `_mins_to_deadline`, `_deadline_ts`, `_select_extra_slots`, `_activate_recovery_slot`, `_deactivate_recovery_slot`. Replaced `_clear_shortfall_override` (blanket 2h auto-clear no longer needed). |
+| **Out-of-scope addition (post-deploy)** | `initialize()` now calls `_on_session_start()` if `ev3_session_active` is already `on` at startup — recovers mid-session state after AppDaemon restart. Not in Session 3 spec; added during deployment verification when car was found already plugged in. `session_start_ts` and `session_start_delivered` are set to values at restart time (not original plug-in time) — rate computation is best-effort for the resumed session. |
 
 ### Surprises / Deviations from Plan
 

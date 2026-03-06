@@ -78,6 +78,11 @@ class EVSessionMonitor(hass.Hass):
         # Monthly summary check — run at 00:05 every day; handler checks if 1st of month
         self.run_daily(self._check_monthly_boundary, "00:05:00")
 
+        # Startup recovery: if session already active (AppDaemon restarted mid-session)
+        if self.get_state(E_SESSION_ACTIVE) == "on":
+            self.log("EVSessionMonitor: session already active at startup — recovering")
+            self._on_session_start()
+
         # Write current sensor state on startup
         self._write_cycle_cost_sensor()
         self._write_monthly_summary_sensor()

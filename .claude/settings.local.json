@@ -9,7 +9,27 @@
       "Bash(python -m py_compile appdaemon/apps/smart-ev-learning/status_narrator.py)",
       "Bash(python -m py_compile appdaemon/apps/smart-ev-learning/chart_data_writer.py)",
       "Bash(python -m py_compile appdaemon/apps/smart-ev-learning/predictor.py)",
-      "Bash(git add -A)"
+      "Bash(git add -A)",
+      "Bash(git commit:*)",
+      "Bash(SSH=\"ssh -i ~/.ssh/homeassistant root@homeassistant.local\")",
+      "Bash(SCP=\"scp -i ~/.ssh/homeassistant\")",
+      "Bash(HA=\"root@homeassistant.local\")",
+      "Bash(AD=\"/addon_configs/a0d7b954_appdaemon/apps\")",
+      "Bash(__NEW_LINE_1732c697b16dee47__ echo \"=== Deploying ev_ui_sensors.yaml ===\")",
+      "Bash($SCP packages/ev_ui_sensors.yaml $HA:/config/packages/ev_ui_sensors.yaml)",
+      "Bash(__NEW_LINE_1732c697b16dee47__ echo \"=== Deploying AppDaemon scripts ===\")",
+      "Bash(for f in utils.py startup_monitor.py mode_resolver.py status_narrator.py chart_data_writer.py predictor.py apps.yaml)",
+      "Bash(do)",
+      "Bash($SCP appdaemon/apps/smart-ev-learning/$f $HA:$AD/$f)",
+      "Bash(echo \"OK: $f\")",
+      "Bash(done)",
+      "Bash(ssh -i ~/.ssh/homeassistant root@homeassistant.local \"ha core check\")",
+      "Bash(ssh -i ~/.ssh/homeassistant root@homeassistant.local \":*)",
+      "Bash(ssh -i ~/.ssh/homeassistant root@homeassistant.local \"ls -la /config/packages/ev_ui_sensors.yaml && ha core check && ls /addon_configs/a0d7b954_appdaemon/apps/*.py | xargs -I{} basename {} && grep -E ''^ev_'' /addon_configs/a0d7b954_appdaemon/apps/apps.yaml\")",
+      "Bash(ssh -i ~/.ssh/homeassistant root@homeassistant.local \"journalctl -u addon_a0d7b954_appdaemon --since ''5 minutes ago'' --no-pager 2>/dev/null | grep -iE ''\\(EVMode|EVStatus|EVChart|EVStartup|EVPredictor|error|warning|loaded|starting\\)'' | tail -40\")",
+      "Bash(ssh -i ~/.ssh/homeassistant root@homeassistant.local \"ha addons logs a0d7b954_appdaemon 2>&1 | tail -60\")",
+      "Bash(ssh -i ~/.ssh/homeassistant root@homeassistant.local 'python3 -c \"\":*)",
+      "Bash(ssh -i ~/.ssh/homeassistant root@homeassistant.local ':*)"
     ]
   }
 }

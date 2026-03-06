@@ -10,8 +10,8 @@ Three responsibilities (DESIGN_SPEC Sections 10, 11):
 
 2. kWh checkpoints (50% / 75%) — during an active session compare actual delivery
    against expected rate.
-   • 50% checkpoint: if >15% behind → activate input_boolean.ev_charge_now_override
-     (uses same ev_control_effective_master activation path) + record extra_slots.
+   • 50% checkpoint: project at 70% of actual session rate — if behind, schedule
+     cheapest unplanned future slots (price-aware, per-slot activation, no blanket override).
    • 75% checkpoint: if unrecoverable → set input_boolean.ev_shortfall_unrecoverable
      so mode_resolver.py escalates to warning + send push notification.
 
@@ -26,6 +26,7 @@ Reads from ev_session_cost_v3 entities — does NOT duplicate their logic:
 """
 
 import json
+import math
 import os
 import time
 from datetime import datetime, timezone
@@ -115,6 +116,7 @@ class EVSessionMonitor(hass.Hass):
             self.log("EVSessionMonitor: continuing plan cycle (new session within cycle)")
 
         # Reset per-session tracking
+        cycle["session_start_ts"]        = datetime.now(timezone.utc).timestamp()
         cycle["session_start_delivered"] = self._float(E_DELIVERED_KWH, 0.0)
         cycle["session_start_cost"]      = self._float(E_SESSION_COST, 0.0)
 
@@ -189,40 +191,73 @@ class EVSessionMonitor(hass.Hass):
 
     def _check_shortfall_50(self, delivered, target):
         """
-        50% checkpoint: check if available planned slots can cover remaining kWh.
-        If capacity is >15% short → activate charge_now_override.
+        50% checkpoint: project forward at 70% of observed session charging rate.
+        If behind, schedule cheapest unplanned future slots to close the gap.
+        Price-aware — slot selection sorted cheapest-first, no blanket override.
         """
         remaining = max(0.0, target - delivered)
         if remaining <= 0:
             return
 
-        available_kwh = self._available_plan_kwh()
-        if available_kwh < 0:
-            return  # can't determine — skip
+        actual_rate = self._actual_charge_rate_kwh_h()
+        if actual_rate is None:
+            self.log("EVSessionMonitor: 50%% checkpoint — actual rate unavailable, skipping", level="WARNING")
+            return
 
-        shortfall_ratio = (remaining - available_kwh) / remaining if remaining > 0 else 0.0
+        conservative_rate = actual_rate * 0.70
+        if conservative_rate <= 0:
+            return
 
-        if shortfall_ratio > SHORTFALL_THRESHOLD:
+        mins_to_deadline = self._mins_to_deadline()
+        if mins_to_deadline is None or mins_to_deadline <= 0:
+            return
+
+        hours_to_deadline = mins_to_deadline / 60.0
+        projected_kwh = conservative_rate * hours_to_deadline
+
+        self.log(
+            "EVSessionMonitor: 50%% checkpoint — actual_rate=%.2f kWh/h conservative=%.2f kWh/h "
+            "remaining=%.2f kWh projected=%.2f kWh hours_left=%.1f",
+            actual_rate, conservative_rate, remaining, projected_kwh, hours_to_deadline,
+        )
+
+        if projected_kwh >= remaining:
+            self.log("EVSessionMonitor: 50%% checkpoint — on track, no action needed")
+            return
+
+        # Deficit: how many extra 15-min slots needed at conservative rate?
+        deficit_kwh = remaining - projected_kwh
+        kwh_per_slot = conservative_rate * 0.25  # 15-min slot at conservative rate
+        extra_count = math.ceil(deficit_kwh / kwh_per_slot) if kwh_per_slot > 0 else 0
+        if extra_count <= 0:
+            return
+
+        extra_slots = self._select_extra_slots(extra_count)
+        if not extra_slots:
             self.log(
-                "EVSessionMonitor: 50%% checkpoint — shortfall detected "
-                "(available=%.3f remaining=%.3f ratio=%.2f). Activating charge_now_override.",
-                available_kwh, remaining, shortfall_ratio,
+                "EVSessionMonitor: 50%% checkpoint — need %d extra slots but none available",
+                extra_count, level="WARNING",
             )
-            try:
-                self.call_service("input_boolean/turn_on", entity_id=E_CHARGE_NOW)
-            except Exception as exc:
-                self.log("EVSessionMonitor: failed to activate charge_now_override: %s", exc, level="WARNING")
+            return
 
-            # Mark that we triggered shortfall recovery for extra cost tracking
-            self._data["current_cycle"]["shortfall_active"] = True
-            # Schedule auto-clear of charge_now_override after 2 hours
-            self.run_in(self._clear_shortfall_override, 7200)
-        else:
-            self.log(
-                "EVSessionMonitor: 50%% checkpoint — on track "
-                "(available=%.3f remaining=%.3f)",
-                available_kwh, remaining,
-            )
+        self.log(
+            "EVSessionMonitor: 50%% checkpoint — scheduling %d recovery slots "
+            "(deficit=%.2f kWh, needed=%d, found=%d)",
+            len(extra_slots), deficit_kwh, extra_count, len(extra_slots),
+        )
+
+        self._data["current_cycle"]["shortfall_active"] = True
+        now_ts = int(datetime.now(timezone.utc).timestamp())
+        for slot_ts in extra_slots:
+            slot_dt = datetime.fromtimestamp(slot_ts, tz=timezone.utc)
+            end_dt = datetime.fromtimestamp(slot_ts + 900, tz=timezone.utc)
+            if slot_ts > now_ts:
+                self.run_at(self._activate_recovery_slot, slot_dt)
+                self.run_at(self._deactivate_recovery_slot, end_dt)
+            else:
+                # Current slot — activate immediately, clear at slot end
+                self._activate_recovery_slot({})
+                self.run_at(self._deactivate_recovery_slot, end_dt)
 
     def _check_shortfall_75(self, delivered, target):
         """
@@ -267,19 +302,83 @@ class EVSessionMonitor(hass.Hass):
                 available_kwh, remaining,
             )
 
-    def _clear_shortfall_override(self, kwargs):
-        """Auto-clear charge_now_override after shortfall recovery window."""
+    def _actual_charge_rate_kwh_h(self):
+        """
+        Compute actual charging rate kWh/h from this session.
+        Returns None if < 5 min elapsed or nothing delivered yet.
+        """
         cycle = self._data["current_cycle"]
-        if not cycle.get("shortfall_active"):
-            return
-        remaining = self._float(E_REMAINING_KWH, 999.0)
-        if remaining <= 0.05:
-            return  # target reached — auto-off already handled
+        session_start_ts = cycle.get("session_start_ts")
+        if not session_start_ts:
+            return None
+        elapsed_h = (datetime.now(timezone.utc).timestamp() - session_start_ts) / 3600.0
+        if elapsed_h < 5 / 60:  # less than 5 minutes — rate unreliable
+            return None
+        session_kwh = max(0.0, self._float(E_DELIVERED_KWH, 0.0) - cycle.get("session_start_delivered", 0.0))
+        if session_kwh <= 0:
+            return None
+        return session_kwh / elapsed_h
+
+    def _mins_to_deadline(self):
+        try:
+            dl = self.get_state(E_DEADLINE)
+            if not dl or dl in ("unknown", "unavailable"):
+                return None
+            dl_dt = datetime.fromisoformat(dl)
+            if dl_dt.tzinfo is None:
+                dl_dt = dl_dt.replace(tzinfo=timezone.utc)
+            return (dl_dt - datetime.now(timezone.utc)).total_seconds() / 60
+        except Exception:
+            return None
+
+    def _deadline_ts(self):
+        try:
+            dl = self.get_state(E_DEADLINE)
+            if not dl or dl in ("unknown", "unavailable"):
+                return None
+            dl_dt = datetime.fromisoformat(dl)
+            if dl_dt.tzinfo is None:
+                dl_dt = dl_dt.replace(tzinfo=timezone.utc)
+            return int(dl_dt.timestamp())
+        except Exception:
+            return None
+
+    def _select_extra_slots(self, count):
+        """
+        Return up to `count` cheapest future slot timestamps not in planned_slots.
+        Slots must be before the deadline, sorted cheapest-first.
+        """
+        try:
+            planned = self.get_state(E_PLAN_SLOTS, attribute="planned_slots") or []
+            planned_ts_set = {entry["ts"] for entry in planned if "ts" in entry}
+            all_slots = self.get_state("sensor.ev_price_slots_15m_effective", attribute="data") or []
+            now_ts = int(datetime.now(timezone.utc).timestamp())
+            deadline_ts = self._deadline_ts()
+            future_unplanned = [
+                s for s in all_slots
+                if (s.get("ts", 0) > now_ts - 900  # include current 15-min slot if started recently
+                    and (deadline_ts is None or s.get("ts", 0) < deadline_ts)
+                    and s.get("ts", 0) not in planned_ts_set)
+            ]
+            future_unplanned.sort(key=lambda s: s.get("PriceWithTax", 999))
+            return [s["ts"] for s in future_unplanned[:count]]
+        except Exception as exc:
+            self.log("EVSessionMonitor: _select_extra_slots error: %s", exc, level="WARNING")
+            return []
+
+    def _activate_recovery_slot(self, kwargs):
+        try:
+            self.call_service("input_boolean/turn_on", entity_id=E_CHARGE_NOW)
+            self.log("EVSessionMonitor: recovery slot — activated charge_now_override")
+        except Exception as exc:
+            self.log("EVSessionMonitor: recovery slot activate failed: %s", exc, level="WARNING")
+
+    def _deactivate_recovery_slot(self, kwargs):
         try:
             self.call_service("input_boolean/turn_off", entity_id=E_CHARGE_NOW)
-            self.log("EVSessionMonitor: shortfall recovery window ended, cleared charge_now_override")
+            self.log("EVSessionMonitor: recovery slot — deactivated charge_now_override")
         except Exception as exc:
-            self.log("EVSessionMonitor: failed to clear charge_now_override: %s", exc, level="WARNING")
+            self.log("EVSessionMonitor: recovery slot deactivate failed: %s", exc, level="WARNING")
 
     # ─────────────────────────────────────────────────────────────────────────
     # Cycle completion
@@ -492,16 +591,17 @@ class EVSessionMonitor(hass.Hass):
     @staticmethod
     def _empty_cycle():
         return {
-            "active":                False,
-            "start_time":            None,
-            "prev_sessions_kwh":     0.0,
-            "prev_sessions_cost":    0.0,
-            "extra_slots_cost":      0.0,
-            "checkpoint_50_done":    False,
-            "checkpoint_75_done":    False,
-            "shortfall_active":      False,
+            "active":                  False,
+            "start_time":              None,
+            "prev_sessions_kwh":       0.0,
+            "prev_sessions_cost":      0.0,
+            "extra_slots_cost":        0.0,
+            "checkpoint_50_done":      False,
+            "checkpoint_75_done":      False,
+            "shortfall_active":        False,
+            "session_start_ts":        None,
             "session_start_delivered": 0.0,
-            "session_start_cost":    0.0,
+            "session_start_cost":      0.0,
         }
 
     def _load_data(self):

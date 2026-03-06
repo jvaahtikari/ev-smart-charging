@@ -138,7 +138,8 @@
 | Active slot list | `sensor.ev_plan_15m_rank_effective.planned_slots` — array of `{ts, rank}`. Selects cheapest `ceil(remaining_kWh / kWh_per_slot)` future slots within `[now, deadline)`. Recomputed as template sensor on every state change. |
 | Recalculation frequency | State-triggered (ev_smart_charge_enabled, ev_should_charge_now_15m_effective, ev_charge_now_override, ev_should_charge_now_min_charge, zag063912_charger_mode, HA start) + time_pattern every 15 min (quarter tick) + every 5 min at :10s (reconcile). |
 | Activation mechanism | `binary_sensor.ev_should_charge_now_15m_effective`: checks if current slot_ts is in `planned_slots`. `ev_control_effective_master` automation watches this binary sensor and starts/stops charger via `button.zag063912_resume_charging` / `button.zag063912_stop_charging`. |
-| Shortfall recovery compatibility | `input_boolean.ev_charge_now_override` is already part of `ev_should_charge_now_combined`. Activating it from session_monitor.py causes `ev_control_effective_master` to start charging — same mechanism, fully compatible. No modification to template sensors required. |
+| 50% checkpoint recovery mechanism | **Revised post-commit.** Original impl used blanket `ev_charge_now_override` (ignores price). New impl: compute actual session kWh/h, apply 70% conservative factor, project to deadline, if short → `_select_extra_slots()` picks cheapest unplanned future slots from `sensor.ev_price_slots_15m_effective.data` (sorted by PriceWithTax ascending, excluding already-planned ts), schedules per-slot `run_at()` activate/deactivate of `ev_charge_now_override`. No blanket override — charging only happens in selected cheap slots. |
+| Shortfall recovery activation path | `input_boolean.ev_charge_now_override` is still used, but per-slot (activate at slot start, deactivate 15 min later via `run_at`). Already part of `ev_should_charge_now_combined` → `ev_control_effective_master` starts/stops charger. No template changes required. |
 | ev_session_cost_v3 entities used | `binary_sensor.ev3_session_active`, `sensor.ev3_session_delivered_kwh`, `input_number.ev3_session_cost_actual_eur` — read only, NOT duplicated. |
 | input_text pattern for new sensors | `sensor.ev_plan_cycle_cost` and `sensor.ev_monthly_cost_summary` converted to input_text pass-throughs (same pattern as Session 2: `input_text.ev_plan_cycle_cost`, `input_text.ev_monthly_cost_summary`). session_monitor.py writes to input_text entities with state + attributes. |
 | plan_cycle_data.json location | `/config/plan_cycle_data.json` — persists cycle history and current cycle state across AppDaemon restarts. |
@@ -234,6 +235,14 @@ All existing scripts use `self.set_state(entity_id, state=value, attributes={...
 - Recalculation: event-driven (state changes) + time-pattern (every 5 min reconcile, every 15 min quarter tick)
 - Charging control: `binary_sensor.ev_should_charge_now_15m_effective` checks if current quarter-ts is in planned_slots
 - Master automation: `ev_control_effective_master` activates/deactivates charger via `button.zag063912_resume_charging` / `button.zag063912_stop_charging`
+
+### Session 3 Design Revision
+
+| Topic | Details |
+| --- | --- |
+| 50% checkpoint logic revised | Original impl activated `ev_charge_now_override` blanket (could charge at high prices). Revised: observe actual session rate → 70% conservative factor → project to deadline → if short, select cheapest unplanned future slots sorted by `PriceWithTax` ascending. Per-slot `run_at()` scheduling — no blanket override, price-safe. Aligns with DESIGN_SPEC §11.2 ("add cheapest available slots"). |
+| `session_start_ts` added to cycle | New field in `plan_cycle_data.json` `current_cycle` dict — Unix timestamp of session start, needed by `_actual_charge_rate_kwh_h()`. Backwards-compatible (falls back to None → checkpoint skips gracefully). |
+| New helpers in session_monitor.py | `_actual_charge_rate_kwh_h`, `_mins_to_deadline`, `_deadline_ts`, `_select_extra_slots`, `_activate_recovery_slot`, `_deactivate_recovery_slot`. Replaced `_clear_shortfall_override` (blanket 2h auto-clear no longer needed). |
 
 ### Surprises / Deviations from Plan
 

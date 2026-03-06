@@ -50,7 +50,7 @@
 - [ ] apps.yaml entries for AppDaemon scripts (Session 2 task)
 
 ### Session 2 — AppDaemon Scripts
-**Status:** DEPLOYED — pending chart_data.json verification
+**Status:** COMPLETE
 **Date started:** 2026-03-05
 **Date completed:** 2026-03-06
 
@@ -66,8 +66,8 @@
 - [x] ha core check passes
 - [x] All 4 new AppDaemon scripts confirmed running (thread pinning in logs: threads 4–7)
 - [x] /config/www/ev-dashboard/ directory created on HA
-- [ ] chart_data.json confirmed written (pending — directory was missing initially, manually created; verify next cycle)
-- [ ] Entity state spot-check: sensor.ev_active_mode, sensor.ev_status_narrative, sensor.ev_system_ready
+- [x] chart_data.json confirmed written
+- [x] Entity state spot-check: ev_active_mode=smart_charging ✓, ev_status_narrative="Charging now — slot 23:30–23:45 at 0.0 c/kWh." ✓, ev_system_ready=true ✓
 
 ### Phase 2a — Core Entities + AppDaemon
 - [x] sensor.ev_active_mode (Session 1 template — AppDaemon pass-through in Session 2)

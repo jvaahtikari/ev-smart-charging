@@ -49,9 +49,29 @@
 - [x] binary_sensor.ev_car_home uses confirmed device tracker entity (device_tracker.smart_none, live = on)
 - [ ] apps.yaml entries for AppDaemon scripts (Session 2 task)
 
+### Session 2 — AppDaemon Scripts
+**Status:** DEPLOYED — pending chart_data.json verification
+**Date started:** 2026-03-05
+**Date completed:** 2026-03-06
+
+- [x] utils.py — ha_write() with 3-retry, 2s backoff, health flag on failure
+- [x] mode_resolver.py — full Section 2.2 priority logic, 13 modes, writes input_text.ev_active_mode
+- [x] status_narrator.py — full Section 5.1 narrative table (19 strings), writes input_text.ev_status_narrative
+- [x] chart_data_writer.py — builds chart_data.json from price curve + planned slots, atomic write
+- [x] startup_monitor.py — checks 6 required apps loaded, writes input_text.ev_system_ready
+- [x] predictor.py — additive: writes input_text.ev_last_target_decision with decision attributes
+- [x] ev_ui_sensors.yaml — 5 template sensors converted to input_text pass-throughs; 5 input_text entities added
+- [x] apps.yaml — 4 new AppDaemon app entries added
+- [x] All scripts deployed to /addon_configs/a0d7b954_appdaemon/apps/
+- [x] ha core check passes
+- [x] All 4 new AppDaemon scripts confirmed running (thread pinning in logs: threads 4–7)
+- [x] /config/www/ev-dashboard/ directory created on HA
+- [ ] chart_data.json confirmed written (pending — directory was missing initially, manually created; verify next cycle)
+- [ ] Entity state spot-check: sensor.ev_active_mode, sensor.ev_status_narrative, sensor.ev_system_ready
+
 ### Phase 2a — Core Entities + AppDaemon
-- [x] sensor.ev_active_mode (Session 1 template — replaced by AppDaemon in Session 2)
-- [x] sensor.ev_status_narrative (Session 1 template — replaced by AppDaemon in Session 2)
+- [x] sensor.ev_active_mode (Session 1 template — AppDaemon pass-through in Session 2)
+- [x] sensor.ev_status_narrative (Session 1 template — AppDaemon pass-through in Session 2)
 - [x] binary_sensor.ev_car_home
 - [x] sensor.ev_last_target_decision
 - [x] sensor.ev_journey_projected_departure_soc
@@ -64,11 +84,11 @@
 - [x] input_datetime.ev_return_time
 - [x] input_boolean.ev_preheat_from_grid
 - [x] input_number.ev_grid_fixed_fee_ckwh
-- [ ] utils.py (shared utility module)
-- [ ] mode_resolver.py
-- [ ] status_narrator.py
-- [ ] chart_data_writer.py
-- [ ] startup_monitor.py
+- [x] utils.py (shared utility module)
+- [x] mode_resolver.py
+- [x] status_narrator.py
+- [x] chart_data_writer.py
+- [x] startup_monitor.py
 
 ---
 
@@ -94,6 +114,16 @@
 | Slot ranking mechanism summary | Price-ascending sort in `ev_price_slots_15m_effective`. See details below |
 | Git baseline tag confirmed | `pre-ev-dashboard-baseline` at commit `be6381e` |
 | ev_session_cost_v3.yaml location | `/config/packages/ev_session_cost_v3.yaml` (moved from nested packages/packages/ during Session 0) |
+
+### Session 2 Decisions
+
+| Field | Value |
+| --- | --- |
+| sensor.ev_price_slots_15m_effective attribute | `data` — confirmed correct (entries: {DateTime, ts, PriceWithTax, Rank}) |
+| chart_data.json write failure cause | Directory /config/www/ev-dashboard/ didn't exist on first run; os.makedirs in initialize() created it, but file wasn't observed until after manual dir creation. Attribute name was NOT the issue. |
+| input_text backend pattern | AppDaemon writes to input_text.*, template sensor reads from it — avoids HA template re-evaluation conflict with AppDaemon set_state() |
+| Tier 3 journey warning | Fires once per departure (_tier3_fired flag), checks hours_to_dep * 11 kW < (100-soc)/100 * 62 kWh |
+| Bargain mode detection | Reads sensor.ev_price_slots_15m_effective.data, finds current 15-min slot by (now // 900) * 900, compares PriceWithTax * 100 ≤ input_number.ev_bargain_price_threshold |
 
 ### Session 1 Decisions
 
